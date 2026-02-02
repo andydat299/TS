@@ -1,0 +1,20 @@
+{
+  "name": "discord-game-bot",
+  "version": "1.0.0",
+  "description": "Bot Discord Tài Xỉu và Bầu Cua",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "canvas": "^3.2.1",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "express": "^4.22.1",
+    "mongoose": "^8.22.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
