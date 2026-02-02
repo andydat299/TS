@@ -3,15 +3,15 @@ const { Client, GatewayIntentBits, Collection, ContainerBuilder, TextDisplayBuil
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const { connectDatabase } = require('./database/connect');
-const User = require('./database/models/User');
-const Guild = require('./database/models/Guild');
-const Ring = require('./database/models/Ring');
-const Marriage = require('./database/models/Marriage');
-const Inventory = require('./database/models/Inventory');
-const Topup = require('./database/models/Topup');
-const { buttonEmoji, displayEmoji } = require('./utils/emoji');
-const { createMarriageCard, createNotMarriedCard } = require('./utils/marriage-canvas');
+const { connectDatabase } = require('./src/database/connect');
+const User = require('./src/database/models/User');
+const Guild = require('./src/database/models/Guild');
+const Ring = require('./src/database/models/Ring');
+const Marriage = require('./src/database/models/Marriage');
+const Inventory = require('./src/database/models/Inventory');
+const Topup = require('./src/database/models/Topup');
+const { buttonEmoji, displayEmoji } = require('./src/utils/emoji');
+const { createMarriageCard, createNotMarriedCard } = require('./src/utils/marriage-canvas');
 
 const DEFAULT_PREFIX = '!';
 const ID_DEV = process.env.ID_DEV || ''; // ID Developer từ .env
