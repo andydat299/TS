@@ -1,6 +1,35 @@
 const { createCanvas, loadImage } = require('canvas');
 const { drawEmoji, getEmojiURL, isCustomEmoji } = require('./emoji');
 
+// Cache emoji đã load
+const emojiCache = new Map();
+
+// Load Discord custom emoji
+async function loadCustomEmoji(emoji) {
+    if (!emoji || !isCustomEmoji(emoji)) return null;
+    
+    if (emojiCache.has(emoji)) {
+        return emojiCache.get(emoji);
+    }
+    
+    const url = getEmojiURL(emoji);
+    if (url) {
+        try {
+            const img = await loadImage(url);
+            emojiCache.set(emoji, img);
+            return img;
+        } catch (err) {
+            console.error('Không thể load emoji:', url);
+            return null;
+        }
+    }
+    return null;
+}
+
+// Config emoji
+const RING_EMOJI = '<a:love:1406646555414630430>';
+const HEART_EMOJI = '<:heart_balloons:1468136274174148620>'; // Thay bằng ID emoji heart của bạn nếu có
+
 /**
  * Tạo ảnh thông tin hôn nhân
  */
@@ -30,11 +59,26 @@ async function createMarriageCard(user1, user2, marriage, client) {
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    // Title
+    // Title với emoji
     ctx.fillStyle = '#c71585';
     ctx.font = 'bold 36px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('<:dongy:1406647630746095797> Married <:dongy:1406647630746095797>', 400, 55);
+    
+    // Load emoji cho title
+    const ringImg = await loadCustomEmoji(RING_EMOJI);
+    if (ringImg) {
+        const titleText = 'Married';
+        const titleWidth = ctx.measureText(titleText).width;
+        const emojiSize = 36;
+        const totalWidth = emojiSize + 15 + titleWidth + 15 + emojiSize;
+        const startX = 400 - totalWidth / 2;
+        
+        ctx.drawImage(ringImg, startX, 25, emojiSize, emojiSize);
+        ctx.fillText(titleText, 400, 55);
+        ctx.drawImage(ringImg, startX + totalWidth - emojiSize, 25, emojiSize, emojiSize);
+    } else {
+        ctx.fillText('💍 Married 💍', 400, 55);
+    }
 
     // Decorative line
     ctx.strokeStyle = '#ff69b4';
@@ -89,11 +133,22 @@ async function createMarriageCard(user1, user2, marriage, client) {
         console.error('Error loading avatars:', e);
     }
 
-    // Heart in the middle
-    ctx.fillStyle = '#ff1493';
-    ctx.font = 'bold 60px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('❤️', 400, 185);
+    // Heart in the middle - load emoji
+    const heartImg = await loadCustomEmoji(HEART_EMOJI);
+    if (heartImg) {
+        ctx.drawImage(heartImg, 370, 145, 60, 60);
+    } else {
+        // Fallback: vẽ heart bằng hình học
+        ctx.fillStyle = '#ff1493';
+        ctx.beginPath();
+        const hx = 400, hy = 170, size = 25;
+        ctx.moveTo(hx, hy + size / 4);
+        ctx.bezierCurveTo(hx, hy, hx - size, hy, hx - size, hy + size / 4);
+        ctx.bezierCurveTo(hx - size, hy + size / 2 + size / 4, hx, hy + size, hx, hy + size + size / 4);
+        ctx.bezierCurveTo(hx, hy + size, hx + size, hy + size / 2 + size / 4, hx + size, hy + size / 4);
+        ctx.bezierCurveTo(hx + size, hy, hx, hy, hx, hy + size / 4);
+        ctx.fill();
+    }
 
     // User names
     ctx.fillStyle = '#8b008b';
@@ -107,32 +162,38 @@ async function createMarriageCard(user1, user2, marriage, client) {
     const maxPoints = 500;
     const progressPercent = Math.min(lovePoints / maxPoints, 1);
     
-    // Love status
-    let loveStatus, loveColor, loveEmoji;
+    // Love status với emoji IDs
+    let loveStatus, loveColor, loveEmojiId, loveEmojiCount;
     if (lovePoints >= 500) {
         loveStatus = 'Tình yêu bất diệt!';
         loveColor = '#ff1493';
-        loveEmoji = '<:PurpleAngelHeart:1468117931060756695> <:PurpleAngelHeart:1468117931060756695> <:PurpleAngelHeart:1468117931060756695>';
+        loveEmojiId = '<:PurpleAngelHeart:1468117931060756695>';
+        loveEmojiCount = 3;
     } else if (lovePoints >= 300) {
         loveStatus = 'Hạnh phúc viên mãn!';
         loveColor = '#ff69b4';
-        loveEmoji = '<:hello_kitty:1468118169087639684> <:hello_kitty:1468118169087639684> <:hello_kitty:1468118169087639684>';
+        loveEmojiId = '<:hello_kitty:1468118169087639684>';
+        loveEmojiCount = 3;
     } else if (lovePoints >= 150) {
         loveStatus = 'Tình cảm tốt đẹp!';
         loveColor = '#ffb6c1';
-        loveEmoji = '<:hello_kitty:1468118169087639684> <:hello_kitty:1468118169087639684>';
+        loveEmojiId = '<:hello_kitty:1468118169087639684>';
+        loveEmojiCount = 2;
     } else if (lovePoints >= 50) {
         loveStatus = 'Bình thường';
         loveColor = '#ffd700';
-        loveEmoji = '💛💛';
+        loveEmojiId = null; // fallback
+        loveEmojiCount = 2;
     } else if (lovePoints > 0) {
         loveStatus = 'Đang có vấn đề!';
         loveColor = '#ffa500';
-        loveEmoji = '<:Disco_broken_heart:1468118356354928756>';
+        loveEmojiId = '<:Disco_broken_heart:1468118356354928756>';
+        loveEmojiCount = 1;
     } else {
         loveStatus = 'Sắp tan vỡ!';
         loveColor = '#ff4757';
-        loveEmoji = '<:Disco_broken_heart:1468118356354928756> <:Disco_broken_heart:1468118356354928756> <:Disco_broken_heart:1468118356354928756>';
+        loveEmojiId = '<:Disco_broken_heart:1468118356354928756>';
+        loveEmojiCount = 3;
     }
 
     // Love points box
@@ -144,10 +205,31 @@ async function createMarriageCard(user1, user2, marriage, client) {
     roundRect(ctx, 100, 285, 600, 70, 12);
     ctx.stroke();
 
-    // Love emoji and points text
-    ctx.font = '20px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(loveEmoji, 400, 310);
+    // Love emoji - vẽ bằng drawImage
+    const loveEmojiImg = await loadCustomEmoji(loveEmojiId);
+    const emojiSize = 22;
+    if (loveEmojiImg) {
+        const totalEmojiWidth = loveEmojiCount * emojiSize + (loveEmojiCount - 1) * 5;
+        const startEmojiX = 400 - totalEmojiWidth / 2;
+        for (let i = 0; i < loveEmojiCount; i++) {
+            ctx.drawImage(loveEmojiImg, startEmojiX + i * (emojiSize + 5), 293, emojiSize, emojiSize);
+        }
+    } else {
+        // Fallback: vẽ heart nhỏ bằng hình học
+        for (let i = 0; i < loveEmojiCount; i++) {
+            const hx = 400 - (loveEmojiCount - 1) * 15 + i * 30;
+            const hy = 300;
+            ctx.fillStyle = loveColor;
+            ctx.beginPath();
+            const s = 8;
+            ctx.moveTo(hx, hy + s / 4);
+            ctx.bezierCurveTo(hx, hy, hx - s, hy, hx - s, hy + s / 4);
+            ctx.bezierCurveTo(hx - s, hy + s / 2 + s / 4, hx, hy + s, hx, hy + s + s / 4);
+            ctx.bezierCurveTo(hx, hy + s, hx + s, hy + s / 2 + s / 4, hx + s, hy + s / 4);
+            ctx.bezierCurveTo(hx + s, hy, hx, hy, hx, hy + s / 4);
+            ctx.fill();
+        }
+    }
     
     // Progress bar background
     ctx.fillStyle = '#e0e0e0';
@@ -196,21 +278,50 @@ async function createMarriageCard(user1, user2, marriage, client) {
             ctx.fillText(`💍 ${marriage.ringName}`, 200, 395);
         }
     } else {
-        ctx.fillText(`${marriage.ringEmoji} ${marriage.ringName}`, 200, 395);
+        // Vẽ fallback cho ring
+        ctx.textAlign = 'left';
+        ctx.fillText(`💍 ${marriage.ringName}`, 130, 395);
     }
     
-    // Date info
-    ctx.textAlign = 'center';
-    ctx.fillText(`📅 ${marriedDate}`, 400, 395);
+    // Date info với custom emoji
+    const dateEmoji = '<:Calendar:1468136063762436187>'; // Thay ID emoji date của bạn
+    const dateEmojiImg = await loadCustomEmoji(dateEmoji);
+    if (dateEmojiImg) {
+        ctx.drawImage(dateEmojiImg, 335, 378, 20, 20);
+        ctx.textAlign = 'left';
+        ctx.fillText(`${marriedDate}`, 360, 395);
+    } else {
+        ctx.textAlign = 'center';
+        ctx.fillText(`📅 ${marriedDate}`, 400, 395);
+    }
     
-    // Days together
+    // Days together với custom emoji
+    const daysEmoji = '<:MochaClock:1468114318015860817>'; // Thay ID emoji time của bạn
+    const daysEmojiImg = await loadCustomEmoji(daysEmoji);
     ctx.fillStyle = '#c71585';
-    ctx.fillText(`⏳ ${daysMarried} ngày`, 600, 395);
+    if (daysEmojiImg) {
+        ctx.drawImage(daysEmojiImg, 545, 378, 20, 20);
+        ctx.textAlign = 'left';
+        ctx.fillText(`${daysMarried} ngày`, 570, 395);
+    } else {
+        ctx.textAlign = 'center';
+        ctx.fillText(`⏳ ${daysMarried} ngày`, 600, 395);
+    }
     
-    // Footer
+    // Footer với custom emoji
+    const footerEmoji = '<:hello_kitty:1468118169087639684>'; // Thay ID emoji love của bạn
+    const footerEmojiImg = await loadCustomEmoji(footerEmoji);
     ctx.font = '14px Arial';
     ctx.fillStyle = '#8b008b';
-    ctx.fillText('💕 Hãy yêu thương nhau mỗi ngày!', 400, 420);
+    ctx.textAlign = 'center';
+    if (footerEmojiImg) {
+        const footerText = 'Hãy yêu thương nhau mỗi ngày!';
+        const footerWidth = ctx.measureText(footerText).width;
+        ctx.drawImage(footerEmojiImg, 400 - footerWidth/2 - 25, 408, 18, 18);
+        ctx.fillText(footerText, 400, 420);
+    } else {
+        ctx.fillText('💕 Hãy yêu thương nhau mỗi ngày!', 400, 420);
+    }
 
     return canvas.toBuffer('image/png');
 }
