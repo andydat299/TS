@@ -109,17 +109,17 @@ async function createGameBoard(balance, betAmount, choice) {
     ctx.fillStyle = COLORS.textGold;
     ctx.font = 'bold 28px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('🎲 TÀI XỈU 🎲', width / 2, 40);
+    ctx.fillText('TÀI XỈU', width / 2, 40);
 
     // Info
     ctx.font = '18px Arial';
     ctx.fillStyle = COLORS.textWhite;
-    ctx.fillText(`💰 Số dư: ${balance.toLocaleString()}đ`, width / 2, 75);
+    ctx.fillText(`Số dư: ${balance.toLocaleString()}đ`, width / 2, 75);
 
     // Bet info
     if (betAmount) {
         ctx.fillStyle = COLORS.textGreen;
-        ctx.fillText(`🎯 Cược: ${betAmount.toLocaleString()}đ`, width / 2, 105);
+        ctx.fillText(`Cược: ${betAmount.toLocaleString()}đ`, width / 2, 105);
     }
 
     // Choice boxes
@@ -137,7 +137,7 @@ async function createGameBoard(balance, betAmount, choice) {
 
     ctx.fillStyle = COLORS.textWhite;
     ctx.font = 'bold 22px Arial';
-    ctx.fillText('🔴 TÀI', 40 + boxWidth / 2, boxY + 28);
+    ctx.fillText('TÀI', 40 + boxWidth / 2, boxY + 28);
     ctx.font = '14px Arial';
     ctx.fillText('(11 - 18)', 40 + boxWidth / 2, boxY + 48);
 
@@ -151,7 +151,7 @@ async function createGameBoard(balance, betAmount, choice) {
 
     ctx.fillStyle = COLORS.textWhite;
     ctx.font = 'bold 22px Arial';
-    ctx.fillText('🔵 XỈU', width - 40 - boxWidth / 2, boxY + 28);
+    ctx.fillText('XỈU', width - 40 - boxWidth / 2, boxY + 28);
     ctx.font = '14px Arial';
     ctx.fillText('(3 - 10)', width - 40 - boxWidth / 2, boxY + 48);
 
@@ -186,7 +186,7 @@ async function createResultBoard(dice, total, won, betAmount, newBalance) {
     ctx.fillStyle = COLORS.textGold;
     ctx.font = 'bold 26px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('🎲 KẾT QUẢ 🎲', width / 2, 38);
+    ctx.fillText('KẾT QUẢ', width / 2, 38);
 
     // Dice
     const diceSize = 80;
@@ -208,28 +208,27 @@ async function createResultBoard(dice, total, won, betAmount, newBalance) {
     }
 
     // Total & Result
-    const result = total >= 11 ? 'TÀI' : 'XỈU';
+    const result = total >= 11 ? 'TAI' : 'XIU';
     const resultColor = total >= 11 ? COLORS.tai : COLORS.xiu;
-    const resultEmoji = total >= 11 ? '🔴' : '🔵';
 
     ctx.font = 'bold 32px Arial';
     ctx.fillStyle = resultColor;
-    ctx.fillText(`${total} → ${resultEmoji} ${result}`, width / 2, 175);
+    ctx.fillText(`${total} -> ${result}`, width / 2, 175);
 
     // Win/Lose
     ctx.font = 'bold 28px Arial';
     if (won) {
         ctx.fillStyle = COLORS.textGreen;
-        ctx.fillText(`🎉 THẮNG +${Math.floor(betAmount * 0.8).toLocaleString()}đ`, width / 2, 215);
+        ctx.fillText(`THẮNG +${Math.floor(betAmount * 0.8).toLocaleString()}đ`, width / 2, 215);
     } else {
         ctx.fillStyle = COLORS.textRed;
-        ctx.fillText(`😢 THUA -${betAmount.toLocaleString()}đ`, width / 2, 215);
+        ctx.fillText(`THUA -${betAmount.toLocaleString()}đ`, width / 2, 215);
     }
 
     // Balance
     ctx.font = '20px Arial';
     ctx.fillStyle = COLORS.textWhite;
-    ctx.fillText(`💰 Số dư: ${newBalance.toLocaleString()}đ`, width / 2, 255);
+    ctx.fillText(`Số dư: ${newBalance.toLocaleString()}đ`, width / 2, 255);
 
     return canvas.toBuffer('image/png');
 }
@@ -257,7 +256,7 @@ async function createRollingAnimation() {
     ctx.fillStyle = COLORS.textGold;
     ctx.font = 'bold 26px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('🎲 ĐANG LẮC... 🎲', width / 2, 40);
+    ctx.fillText('ĐANG LẮC...', width / 2, 40);
 
     // Random dice
     const diceSize = 70;

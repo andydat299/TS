@@ -10,7 +10,7 @@ const {
     AttachmentBuilder
 } = require('discord.js');
 const { createCanvas, loadImage } = require('canvas');
-const { drawEmoji, isCustomEmoji } = require('../utils/emoji');
+const { isCustomEmoji, getEmojiURL } = require('../utils/emoji');
 
 const activeSessions = new Map();
 const SESSION_DURATION = 60;
@@ -24,6 +24,62 @@ const COLORS = {
     tai: '#e74c3c',
     xiu: '#3498db'
 };
+
+// Config emoji cho title (thay bằng ID emoji Discord của bạn)
+const DICE_EMOJI = '<:Cutedice:1468116987430305884>';
+const CLOCK_EMOJI = '';
+
+// Cache emoji
+const emojiCache = new Map();
+
+// Load Discord custom emoji
+async function loadCustomEmoji(emoji) {
+    if (!emoji || !isCustomEmoji(emoji)) return null;
+    
+    if (emojiCache.has(emoji)) {
+        return emojiCache.get(emoji);
+    }
+    
+    const url = getEmojiURL(emoji);
+    if (url) {
+        try {
+            const img = await loadImage(url);
+            emojiCache.set(emoji, img);
+            return img;
+        } catch (err) {
+            console.error('Không thể load emoji:', url);
+            return null;
+        }
+    }
+    return null;
+}
+
+// Vẽ text kèm Discord emoji
+async function drawTextWithEmoji(ctx, text, emoji, x, y, emojiSize = 20, emojiFirst = true) {
+    const emojiImg = await loadCustomEmoji(emoji);
+    
+    ctx.save();
+    const textWidth = ctx.measureText(text).width;
+    
+    if (emojiImg) {
+        const totalWidth = emojiSize + 8 + textWidth;
+        const startX = x - totalWidth / 2;
+        
+        if (emojiFirst) {
+            ctx.drawImage(emojiImg, startX, y - emojiSize + 5, emojiSize, emojiSize);
+            ctx.textAlign = 'left';
+            ctx.fillText(text, startX + emojiSize + 8, y);
+        } else {
+            ctx.textAlign = 'left';
+            ctx.fillText(text, startX, y);
+            ctx.drawImage(emojiImg, startX + textWidth + 8, y - emojiSize + 5, emojiSize, emojiSize);
+        }
+    } else {
+        ctx.textAlign = 'center';
+        ctx.fillText(text, x, y);
+    }
+    ctx.restore();
+}
 
 function rollDice() {
     return Math.floor(Math.random() * 6) + 1;
@@ -95,16 +151,16 @@ async function createSessionCanvas(session, timeLeft) {
     ctx.lineWidth = 3;
     ctx.strokeRect(5, 5, width - 10, height - 10);
 
-    // Title + Round
+    // Title + Round với emoji
     ctx.fillStyle = COLORS.textGold;
     ctx.font = 'bold 26px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(`🎲 TÀI XỈU #${session.round}`, width / 2, 38);
+    await drawTextWithEmoji(ctx, `TÀI XỈU #${session.round}`, DICE_EMOJI, width / 2, 38, 28, true);
 
     // Time + Players
     ctx.font = '18px Arial';
     ctx.fillStyle = timeLeft <= 10 ? COLORS.textRed : COLORS.textWhite;
-    ctx.fillText(`⏱️ ${timeLeft}s | 👥 ${Object.keys(session.bets).length} người chơi`, width / 2, 68);
+    ctx.textAlign = 'center';
+    ctx.fillText(`${timeLeft}s | ${Object.keys(session.bets).length} người chơi`, width / 2, 68);
 
     // Stats
     let taiTotal = 0, xiuTotal = 0;
@@ -127,7 +183,7 @@ async function createSessionCanvas(session, timeLeft) {
 
     ctx.fillStyle = COLORS.tai;
     ctx.font = 'bold 20px Arial';
-    ctx.fillText('🔴 TÀI', 40 + boxWidth / 2, boxY + 28);
+    ctx.fillText('TÀI', 40 + boxWidth / 2, boxY + 28);
     ctx.fillStyle = COLORS.textGold;
     ctx.font = 'bold 18px Arial';
     ctx.fillText(`${taiTotal.toLocaleString()}đ`, 40 + boxWidth / 2, boxY + 55);
@@ -142,7 +198,7 @@ async function createSessionCanvas(session, timeLeft) {
 
     ctx.fillStyle = COLORS.xiu;
     ctx.font = 'bold 20px Arial';
-    ctx.fillText('🔵 XỈU', width - 40 - boxWidth / 2, boxY + 28);
+    ctx.fillText('XỈU', width - 40 - boxWidth / 2, boxY + 28);
     ctx.fillStyle = COLORS.textGold;
     ctx.font = 'bold 18px Arial';
     ctx.fillText(`${xiuTotal.toLocaleString()}đ`, width - 40 - boxWidth / 2, boxY + 55);
@@ -175,7 +231,7 @@ async function createResultCanvas(session, dice, total, winners, losers) {
     ctx.fillStyle = COLORS.textGold;
     ctx.font = 'bold 24px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(`🎲 KẾT QUẢ PHIÊN #${session.round}`, width / 2, 35);
+    ctx.fillText(`KẾT QUẢ PHIÊN #${session.round}`, width / 2, 35);
 
     // Dice
     const diceSize = 70;
@@ -198,7 +254,7 @@ async function createResultCanvas(session, dice, total, winners, losers) {
     // Result
     ctx.font = 'bold 28px Arial';
     ctx.fillStyle = result === 'tai' ? COLORS.tai : COLORS.xiu;
-    ctx.fillText(`${total} → ${result === 'tai' ? '🔴 TÀI' : '🔵 XỈU'}`, width / 2, 155);
+    ctx.fillText(`${total} -> ${result === 'tai' ? 'TÀI' : 'XỈU'}`, width / 2, 155);
 
     // Winners & Losers
     ctx.font = '14px Arial';
@@ -207,7 +263,7 @@ async function createResultCanvas(session, dice, total, winners, losers) {
     let y = 185;
     if (winners.length > 0) {
         ctx.fillStyle = COLORS.textGreen;
-        ctx.fillText(`🎉 Thắng (${winners.length}):`, 30, y);
+        ctx.fillText(`Thắng (${winners.length}):`, 30, y);
         y += 20;
         winners.slice(0, 3).forEach(w => {
             ctx.fillText(`   +${w.win.toLocaleString()}đ`, 30, y);
@@ -222,7 +278,7 @@ async function createResultCanvas(session, dice, total, winners, losers) {
     if (losers.length > 0) {
         ctx.fillStyle = COLORS.textRed;
         ctx.textAlign = 'right';
-        ctx.fillText(`😢 Thua (${losers.length}):`, width - 30, y);
+        ctx.fillText(`Thua (${losers.length}):`, width - 30, y);
         y += 20;
         losers.slice(0, 3).forEach(l => {
             ctx.fillText(`-${l.amount.toLocaleString()}đ`, width - 30, y);

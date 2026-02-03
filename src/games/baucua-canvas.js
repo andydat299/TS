@@ -1,5 +1,5 @@
 const { createCanvas, loadImage } = require('canvas');
-const { drawEmoji, isCustomEmoji } = require('../utils/emoji');
+const { isCustomEmoji, getEmojiURL } = require('../utils/emoji');
 
 // Màu sắc
 const COLORS = {
@@ -15,17 +15,112 @@ const COLORS = {
 };
 
 // Data cho từng con vật
-// Emoji có thể thay bằng Discord custom emoji: '<:nai:1234567890>'
+// Thay icon bằng Discord custom emoji để hiển thị trên Linux
+// Ví dụ: icon: '<:nai:1234567890123456789>'
 const SYMBOL_DATA = {
-    nai: { name: 'NAI', color: '#b8e994', icon: '🦌', index: 0 },
-    bau: { name: 'BẦU', color: '#ff9f43', icon: '🫎', index: 1 },
-    ga: { name: 'GÀ', color: '#ffeaa7', icon: '🐓', index: 2 },
-    tom: { name: 'TÔM', color: '#f368e0', icon: '🦐', index: 3 },
-    cua: { name: 'CUA', color: '#ee5a24', icon: '🦀', index: 4 },
-    ca: { name: 'CÁ', color: '#54a0ff', icon: '🐟', index: 5 }
+    nai: { name: 'NAI', color: '#b8e994', icon: '<:nai:1408346889908256839>', index: 0 },
+    bau: { name: 'BẦU', color: '#ff9f43', icon: '<:bau:1408346338332114945>', index: 1 },
+    ga: { name: 'GÀ', color: '#ffeaa7', icon: '<:ga:1408346501528420384>', index: 2 },
+    tom: { name: 'TÔM', color: '#f368e0', icon: '<:tom:1408347081399341097>', index: 3 },
+    cua: { name: 'CUA', color: '#ee5a24', icon: '<:cua:1408346397794766880>', index: 4 },
+    ca: { name: 'CÁ', color: '#54a0ff', icon: '<:ca:1408346991515144222>', index: 5 }
 };
 
 const SYMBOL_LIST = ['nai', 'bau', 'ga', 'tom', 'cua', 'ca'];
+
+// Cache ảnh emoji
+const emojiCache = new Map();
+
+// Load Discord custom emoji image
+async function loadCustomEmoji(emoji) {
+    if (!emoji || !isCustomEmoji(emoji)) return null;
+    
+    if (emojiCache.has(emoji)) {
+        return emojiCache.get(emoji);
+    }
+    
+    const url = getEmojiURL(emoji);
+    if (url) {
+        try {
+            const img = await loadImage(url);
+            emojiCache.set(emoji, img);
+            return img;
+        } catch (err) {
+            console.error('Không thể load emoji:', url);
+            return null;
+        }
+    }
+    return null;
+}
+
+// Vẽ icon con vật - hỗ trợ Discord custom emoji hoặc fallback vẽ hình học
+async function drawAnimalIcon(ctx, symbol, x, y, size) {
+    const data = SYMBOL_DATA[symbol];
+    if (!data) return;
+    
+    // Thử load Discord custom emoji
+    const emojiImg = await loadCustomEmoji(data.icon);
+    
+    if (emojiImg) {
+        // Có custom emoji - vẽ ảnh
+        ctx.drawImage(emojiImg, x - size/2, y - size/2, size, size);
+    } else {
+        // Fallback - vẽ bằng hình học
+        ctx.save();
+        
+        // Vẽ vòng tròn nền
+        ctx.beginPath();
+        ctx.arc(x, y, size/2, 0, Math.PI * 2);
+        ctx.fillStyle = data.color;
+        ctx.globalAlpha = 0.3;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        
+        // Vẽ viền
+        ctx.strokeStyle = data.color;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        
+        // Vẽ chữ viết tắt ở giữa
+        ctx.fillStyle = data.color;
+        ctx.font = `bold ${size * 0.5}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(data.name.charAt(0), x, y);
+        
+        ctx.restore();
+    }
+}
+
+// Config emoji cho canvas
+const TITLE_EMOJI = '<a:loa:1358084710856921230>';
+
+// Hàm vẽ text kèm Discord emoji
+async function drawTextWithEmoji(ctx, text, emoji, x, y, emojiSize = 20, emojiFirst = true) {
+    const emojiImg = await loadCustomEmoji(emoji);
+    
+    ctx.save();
+    const textWidth = ctx.measureText(text).width;
+    
+    if (emojiImg) {
+        const totalWidth = emojiSize + 5 + textWidth;
+        const startX = x - totalWidth / 2;
+        
+        if (emojiFirst) {
+            ctx.drawImage(emojiImg, startX, y - emojiSize + 5, emojiSize, emojiSize);
+            ctx.textAlign = 'left';
+            ctx.fillText(text, startX + emojiSize + 5, y);
+        } else {
+            ctx.textAlign = 'left';
+            ctx.fillText(text, startX, y);
+            ctx.drawImage(emojiImg, startX + textWidth + 5, y - emojiSize + 5, emojiSize, emojiSize);
+        }
+    } else {
+        ctx.textAlign = 'center';
+        ctx.fillText(text, x, y);
+    }
+    ctx.restore();
+}
 
 // Vẽ rounded rectangle
 function roundRect(ctx, x, y, width, height, radius) {
@@ -61,11 +156,10 @@ async function createGameBoard(bets, betAmount) {
     ctx.lineWidth = 3;
     ctx.strokeRect(5, 5, width - 10, height - 10);
 
-    // Title
+    // Title với emoji
     ctx.fillStyle = COLORS.textGold;
     ctx.font = 'bold 28px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('🎲 BẦU CUA TÔM CÁ 🎲', width / 2, 40);
+    await drawTextWithEmoji(ctx, 'BẦU CUA TÔM CÁ', TITLE_EMOJI, width / 2, 40, 30, true);
 
     // Vẽ 6 ô con vật (2 hàng x 3 cột)
     const cellWidth = 170;
@@ -94,8 +188,8 @@ async function createGameBoard(bets, betAmount) {
         ctx.lineWidth = betOnThis > 0 ? 4 : 2;
         ctx.stroke();
 
-        // Icon (emoji) - hỗ trợ Discord custom
-        await drawEmoji(ctx, data.icon, x + cellWidth / 2, y + 45, 45, loadImage);
+        // Icon - vẽ bằng hình học thay vì emoji
+        drawAnimalIcon(ctx, symbol, x + cellWidth / 2, y + 45, 50);
 
         // Name
         ctx.fillStyle = data.color;
@@ -106,7 +200,7 @@ async function createGameBoard(bets, betAmount) {
         if (betOnThis > 0) {
             ctx.fillStyle = COLORS.textGreen;
             ctx.font = 'bold 14px Arial';
-            ctx.fillText(`💰 ${betOnThis.toLocaleString()}đ`, x + cellWidth / 2, y + 100);
+            ctx.fillText(`${betOnThis.toLocaleString()}đ`, x + cellWidth / 2, y + 100);
         }
     }
 
@@ -151,7 +245,7 @@ async function createResultBoard(diceResults, bets, results) {
     ctx.fillStyle = COLORS.textGold;
     ctx.font = 'bold 26px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('🎲 KẾT QUẢ XÚC XẮC 🎲', width / 2, 38);
+    ctx.fillText('KẾT QUẢ XÚC XẮC', width / 2, 38);
 
     // 3 dice results
     const diceSize = 130;
@@ -172,8 +266,8 @@ async function createResultBoard(diceResults, bets, results) {
         ctx.lineWidth = 4;
         ctx.stroke();
 
-        // Icon - hỗ trợ Discord custom
-        await drawEmoji(ctx, data.icon, x + diceSize / 2, diceY + 55, 60, loadImage);
+        // Icon - vẽ bằng hình học
+        drawAnimalIcon(ctx, symbol, x + diceSize / 2, diceY + 55, 70);
 
         // Name
         ctx.fillStyle = data.color;
@@ -194,7 +288,7 @@ async function createResultBoard(diceResults, bets, results) {
     ctx.font = 'bold 16px Arial';
     ctx.textAlign = 'left';
     ctx.fillStyle = COLORS.textWhite;
-    ctx.fillText('📋 Chi tiết cược:', 40, detailY);
+    ctx.fillText('Chi tiết cược:', 40, detailY);
     detailY += 25;
 
     ctx.font = '15px Arial';
@@ -212,13 +306,13 @@ async function createResultBoard(diceResults, bets, results) {
     
     if (results.netGain > 0) {
         ctx.fillStyle = COLORS.textGreen;
-        ctx.fillText(`🎉 THẮNG +${results.netGain.toLocaleString()}đ 🎉`, width / 2, resultY);
+        ctx.fillText(`THẮNG +${results.netGain.toLocaleString()}đ`, width / 2, resultY);
     } else if (results.netGain === 0) {
         ctx.fillStyle = COLORS.textGold;
-        ctx.fillText(`😐 HÒA VỐN`, width / 2, resultY);
+        ctx.fillText(`HÒA VỐN`, width / 2, resultY);
     } else {
         ctx.fillStyle = COLORS.textRed;
-        ctx.fillText(`😢 THUA ${Math.abs(results.netGain).toLocaleString()}đ`, width / 2, resultY);
+        ctx.fillText(`THUA ${Math.abs(results.netGain).toLocaleString()}đ`, width / 2, resultY);
     }
 
     return canvas.toBuffer('image/png');
@@ -247,7 +341,7 @@ async function createAnimationFrame() {
     ctx.fillStyle = COLORS.textGold;
     ctx.font = 'bold 26px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('🎲 ĐANG LẮC XÚC XẮC... 🎲', width / 2, 38);
+    ctx.fillText('ĐANG LẮC XÚC XẮC...', width / 2, 38);
 
     // Random dice animation
     const diceSize = 100;
@@ -266,8 +360,8 @@ async function createAnimationFrame() {
         ctx.lineWidth = 3;
         ctx.stroke();
 
-        // Icon - hỗ trợ Discord custom
-        await drawEmoji(ctx, data.icon, x + diceSize / 2, diceY + 50, 50, loadImage);
+        // Icon - vẽ bằng hình học
+        drawAnimalIcon(ctx, randomSymbol, x + diceSize / 2, diceY + 50, 55);
     }
 
     return canvas.toBuffer('image/png');

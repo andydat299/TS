@@ -218,15 +218,15 @@ module.exports = {
                 }
 
                 if (game === 'taixiu') {
-                    await taixiuHandler.handleButton(interaction, action, params);
+                    return await taixiuHandler.handleButton(interaction, action, params);
                 } else if (game === 'baucua') {
-                    await baucuaHandler.handleButton(interaction, action, params);
+                    return await baucuaHandler.handleButton(interaction, action, params);
                 } else if (game === 'txs') {
                     // Tài xỉu session
-                    await taixiuSession.handleButton(interaction, action, params);
+                    return await taixiuSession.handleButton(interaction, action, params);
                 } else if (game === 'bcs') {
                     // Bầu cua session
-                    await baucuaSession.handleButton(interaction, action, params);
+                    return await baucuaSession.handleButton(interaction, action, params);
                 } else if (game === 'shop') {
                     // Xử lý mua nhẫn từ shop
                     if (action === 'buy') {

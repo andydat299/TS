@@ -34,7 +34,7 @@ async function createMarriageCard(user1, user2, marriage, client) {
     ctx.fillStyle = '#c71585';
     ctx.font = 'bold 36px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('💕 Married 💕', 400, 55);
+    ctx.fillText('<:dongy:1406647630746095797> Married <:dongy:1406647630746095797>', 400, 55);
 
     // Decorative line
     ctx.strokeStyle = '#ff69b4';
@@ -112,15 +112,15 @@ async function createMarriageCard(user1, user2, marriage, client) {
     if (lovePoints >= 500) {
         loveStatus = 'Tình yêu bất diệt!';
         loveColor = '#ff1493';
-        loveEmoji = '💖💖💖💖💖';
+        loveEmoji = '<:PurpleAngelHeart:1468117931060756695> <:PurpleAngelHeart:1468117931060756695> <:PurpleAngelHeart:1468117931060756695>';
     } else if (lovePoints >= 300) {
         loveStatus = 'Hạnh phúc viên mãn!';
         loveColor = '#ff69b4';
-        loveEmoji = '💕💕💕💕';
+        loveEmoji = '<:hello_kitty:1468118169087639684> <:hello_kitty:1468118169087639684> <:hello_kitty:1468118169087639684>';
     } else if (lovePoints >= 150) {
         loveStatus = 'Tình cảm tốt đẹp!';
         loveColor = '#ffb6c1';
-        loveEmoji = '💗💗💗';
+        loveEmoji = '<:hello_kitty:1468118169087639684> <:hello_kitty:1468118169087639684>';
     } else if (lovePoints >= 50) {
         loveStatus = 'Bình thường';
         loveColor = '#ffd700';
@@ -128,11 +128,11 @@ async function createMarriageCard(user1, user2, marriage, client) {
     } else if (lovePoints > 0) {
         loveStatus = 'Đang có vấn đề!';
         loveColor = '#ffa500';
-        loveEmoji = '💔';
+        loveEmoji = '<:Disco_broken_heart:1468118356354928756>';
     } else {
         loveStatus = 'Sắp tan vỡ!';
         loveColor = '#ff4757';
-        loveEmoji = '💔💔💔';
+        loveEmoji = '<:Disco_broken_heart:1468118356354928756> <:Disco_broken_heart:1468118356354928756> <:Disco_broken_heart:1468118356354928756>';
     }
 
     // Love points box
