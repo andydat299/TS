@@ -17,7 +17,7 @@ const { getEmojiURL, isCustomEmoji, buttonEmoji } = require('../utils/emoji');
 
 const activeSessions = new Map();
 const SESSION_DURATION = 60;
-const BET_AMOUNTS = [100, 500, 1000, 2000, 5000];
+const BET_AMOUNTS = [100, 1000, 2000, 5000]; // Giảm còn 4 để có chỗ cho nút tùy chỉnh
 
 const COLORS = {
     textWhite: '#ffffff',

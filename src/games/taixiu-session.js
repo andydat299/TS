@@ -17,7 +17,7 @@ const { isCustomEmoji, getEmojiURL } = require('../utils/emoji');
 
 const activeSessions = new Map();
 const SESSION_DURATION = 60;
-const BET_AMOUNTS = [100, 500, 1000, 5000, 10000];
+const BET_AMOUNTS = [100, 1000, 5000, 10000]; // Giảm còn 4 để có chỗ cho nút tùy chỉnh
 
 // Hũ (Jackpot) - lưu theo guild
 const jackpotPool = new Map(); // guildId -> amount
