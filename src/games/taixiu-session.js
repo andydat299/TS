@@ -69,6 +69,7 @@ async function saveSession(session) {
             round: session.round,
             bets: session.bets,
             userSelections: session.userSelections,
+            history: session.history || [],
             messageId: session.messageId,
             isActive: true,
             updatedAt: new Date()
@@ -429,6 +430,16 @@ function createSessionUI(session, timeLeft, imageBuffer) {
         )
     );
 
+    // Nút Soi cầu
+    container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('txs_soicau')
+                .setLabel('🔮 Soi cầu')
+                .setStyle(ButtonStyle.Success)
+        )
+    );
+
     container.addSeparatorComponents(new SeparatorBuilder().setDivider(true));
 
     // Tài / Xỉu
@@ -497,6 +508,13 @@ async function runSession(client, channelId) {
             const dice = [rollDice(), rollDice(), rollDice()];
             const total = dice.reduce((a, b) => a + b, 0);
             const result = total >= 11 ? 'tai' : 'xiu';
+
+            // Lưu lịch sử cầu (tối đa 10 mục)
+            if (!session.history) session.history = [];
+            session.history.unshift({ dice: [...dice], total, result, time: Date.now() });
+            if (session.history.length > 10) session.history.length = 10;
+            // Persist history to DB
+            await saveSession(session);
 
             // Kiểm tra jackpot - 3 mặt giống nhau
             const isJackpot = dice[0] === dice[1] && dice[1] === dice[2];
@@ -672,6 +690,32 @@ module.exports = {
         }
 
         switch (action) {
+            case 'soicau': {
+                // Show a modal displaying recent history (read-only)
+                if (!session.history || session.history.length === 0) {
+                    return interaction.reply({ content: 'Chưa có dữ liệu cầu!', flags: MessageFlags.Ephemeral });
+                }
+
+                const lines = session.history.map((h, i) => {
+                    const diceStr = h.dice.join(',');
+                    const resStr = h.result === 'tai' ? '🔴 TÀI' : '🔵 XỈU';
+                    return `#${session.round - i} | ${diceStr} = ${h.total} → ${resStr}`;
+                });
+
+                const modal = new ModalBuilder()
+                    .setCustomId('txs_soicau_modal')
+                    .setTitle('Lịch sử cầu (gần nhất)');
+
+                const historyInput = new TextInputBuilder()
+                    .setCustomId('soicau_history')
+                    .setLabel('Cầu gần nhất')
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setRequired(false)
+                    .setValue(lines.join('\n'));
+
+                modal.addComponents(new ActionRowBuilder().addComponents(historyInput));
+                return interaction.showModal(modal);
+            }
             case 'bet': {
                 const amount = parseInt(params[0]);
                 const balance = await interaction.client.getBalance(userId);
@@ -781,6 +825,10 @@ module.exports = {
     },
 
     async handleModal(interaction) {
+        if (interaction.customId === 'txs_soicau_modal') {
+            // User viewed the modal; acknowledge
+            return interaction.reply({ content: 'Đã xem cầu!', flags: MessageFlags.Ephemeral });
+        }
         if (interaction.customId !== 'txs_custombet_modal') return;
 
         const channelId = interaction.channel.id;

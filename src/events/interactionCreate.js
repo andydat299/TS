@@ -619,7 +619,7 @@ module.exports = {
         // Xử lý Modal Submit
         if (interaction.isModalSubmit()) {
             try {
-                if (interaction.customId === 'txs_custombet_modal') {
+                if (interaction.customId === 'txs_custombet_modal' || interaction.customId === 'txs_soicau_modal') {
                     return await taixiuSession.handleModal(interaction);
                 } else if (interaction.customId === 'bcs_custombet_modal') {
                     return await baucuaSession.handleModal(interaction);

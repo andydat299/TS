@@ -7,6 +7,7 @@ const gameSessionSchema = new mongoose.Schema({
     round: { type: Number, default: 1 },
     bets: { type: mongoose.Schema.Types.Mixed, default: {} },
     userSelections: { type: mongoose.Schema.Types.Mixed, default: {} },
+    history: { type: Array, default: [] },
     messageId: { type: String, default: null },
     isActive: { type: Boolean, default: true },
     createdAt: { type: Date, default: Date.now },
