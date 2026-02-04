@@ -38,6 +38,24 @@ function generateTopupCode() {
     return `${letter1}${letter2}${letter3}${numbers}`;
 }
 
+// Parse số tiền với hỗ trợ k (nghìn) và m (triệu)
+// Ví dụ: 1k = 1000, 10k = 10000, 1m = 1000000, 1.5m = 1500000
+function parseAmount(input) {
+    if (!input) return NaN;
+    const str = String(input).toLowerCase().trim();
+    
+    // Kiểm tra có đuôi k hoặc m không
+    if (str.endsWith('k')) {
+        const num = parseFloat(str.slice(0, -1));
+        return Math.floor(num * 1000);
+    } else if (str.endsWith('m')) {
+        const num = parseFloat(str.slice(0, -1));
+        return Math.floor(num * 1000000);
+    } else {
+        return parseInt(str);
+    }
+}
+
 // Kiểm tra giao dịch trên Casso (không cần số tiền cố định)
 async function checkCassoTransaction(code) {
     const apiKey = process.env.CASSO_API_KEY;
@@ -267,13 +285,13 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // !transfer @user <số tiền> - Chuyển tiền
-    if (command === 'transfer' || command === 'chuyen' || command === 'pay') {
+    // !chotien @user <số tiền> - Chuyển tiền (hỗ trợ k=nghìn, m=triệu)
+    if (command === 'chotien' || command === 'chuyen' || command === 'pay') {
         const targetUser = message.mentions.users.first();
-        const amount = parseInt(args[1]);
+        const amount = parseAmount(args[1]);
 
         if (!targetUser) {
-            return message.reply('❌ Vui lòng tag người nhận! Ví dụ: `!transfer @user 1000`');
+            return message.reply('❌ Vui lòng tag người nhận! Ví dụ: `!chotien @user 1000`');
         }
         if (targetUser.id === message.author.id) {
             return message.reply('❌ Không thể chuyển tiền cho chính mình!');
@@ -282,7 +300,7 @@ client.on('messageCreate', async (message) => {
             return message.reply('❌ Không thể chuyển tiền cho bot!');
         }
         if (!amount || amount <= 0 || isNaN(amount)) {
-            return message.reply('❌ Số tiền không hợp lệ! Ví dụ: `!transfer @user 1000`');
+            return message.reply('❌ Số tiền không hợp lệ! Ví dụ: `!chotien @user 1000` hoặc `!chotien @user 10k`');
         }
         if (amount < 100) {
             return message.reply('❌ Số tiền tối thiểu là 100!');
@@ -320,10 +338,6 @@ client.on('messageCreate', async (message) => {
             );
 
             container.addSeparatorComponents(new SeparatorBuilder().setDivider(true));
-
-            container.addTextDisplayComponents(
-                new TextDisplayBuilder().setContent(`📝 **Mã nạp:** \`${existing.code}\`\n🏦 **Ngân hàng:** ${VIETQR_BANK}\n💳 **STK:** ${VIETQR_ACCOUNT}\n⏰ **Hết hạn:** ${minutesLeft} phút`)
-            );
 
             container.addMediaGalleryComponents(
                 new (require('discord.js').MediaGalleryBuilder)().addItems({ media: { url: qrUrl } })
@@ -375,10 +389,6 @@ client.on('messageCreate', async (message) => {
 
         container.addSeparatorComponents(new SeparatorBuilder().setDivider(true));
 
-        container.addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(`📝 **Mã nạp:** \`${code}\`\n🏦 **Ngân hàng:** ${VIETQR_BANK}\n💳 **STK:** ${VIETQR_ACCOUNT}\n👤 **Chủ TK:** ${VIETQR_NAME}\n⏰ **Hết hạn:** 15 phút`)
-        );
-
         container.addMediaGalleryComponents(
             new (require('discord.js').MediaGalleryBuilder)().addItems({ media: { url: qrUrl } })
         );
@@ -407,23 +417,22 @@ client.on('messageCreate', async (message) => {
         return message.reply({ components: [container], flags: MessageFlags.IsComponentsV2 });
     }
 
-    // !addmoney @user <số tiền> - Add tiền (Admin/Dev only)
+    // !addmoney @user <số tiền> - Add tiền (Dev only, hỗ trợ k=nghìn, m=triệu)
     if (command === 'addmoney' || command === 'add' || command === 'give') {
-        // Kiểm tra quyền admin hoặc dev
+        // Chỉ Dev mới có quyền
         const isDev = message.author.id === ID_DEV;
-        const isAdmin = message.member.permissions.has('Administrator');
-        if (!isDev && !isAdmin) {
-            return message.reply('❌ Bạn không có quyền sử dụng lệnh này!');
+        if (!isDev) {
+            return message.reply('❌ Chỉ Dev mới có quyền sử dụng lệnh này!');
         }
 
         const targetUser = message.mentions.users.first();
-        const amount = parseInt(args[1]);
+        const amount = parseAmount(args[1]);
 
         if (!targetUser) {
             return message.reply('❌ Vui lòng tag người nhận! Ví dụ: `!addmoney @user 1000`');
         }
         if (!amount || isNaN(amount)) {
-            return message.reply('❌ Số tiền không hợp lệ! Ví dụ: `!addmoney @user 1000`');
+            return message.reply('❌ Số tiền không hợp lệ! Ví dụ: `!addmoney @user 1000` hoặc `!addmoney @user 10k`');
         }
 
         const currentBalance = await client.getBalance(targetUser.id);
@@ -437,7 +446,7 @@ client.on('messageCreate', async (message) => {
         }
     }
 
-    // !setmoney @user <số tiền> - Set tiền (Admin/Dev only)
+    // !setmoney @user <số tiền> - Set tiền (Admin/Dev only, hỗ trợ k=nghìn, m=triệu)
     if (command === 'setmoney' || command === 'set') {
         const isDev = message.author.id === ID_DEV;
         const isAdmin = message.member.permissions.has('Administrator');
@@ -446,13 +455,13 @@ client.on('messageCreate', async (message) => {
         }
 
         const targetUser = message.mentions.users.first();
-        const amount = parseInt(args[1]);
+        const amount = parseAmount(args[1]);
 
         if (!targetUser) {
             return message.reply('❌ Vui lòng tag người nhận! Ví dụ: `!setmoney @user 1000`');
         }
-        if (amount === undefined || isNaN(amount) || amount < 0) {
-            return message.reply('❌ Số tiền không hợp lệ! Ví dụ: `!setmoney @user 1000`');
+        if (isNaN(amount) || amount < 0) {
+            return message.reply('❌ Số tiền không hợp lệ! Ví dụ: `!setmoney @user 1000` hoặc `!setmoney @user 1m`');
         }
 
         await client.setBalance(targetUser.id, amount);

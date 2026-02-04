@@ -7,7 +7,10 @@ const {
     ButtonStyle,
     ActionRowBuilder,
     MessageFlags,
-    AttachmentBuilder
+    AttachmentBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle
 } = require('discord.js');
 const { createCanvas, loadImage } = require('canvas');
 const { isCustomEmoji, getEmojiURL } = require('../utils/emoji');
@@ -15,6 +18,25 @@ const { isCustomEmoji, getEmojiURL } = require('../utils/emoji');
 const activeSessions = new Map();
 const SESSION_DURATION = 60;
 const BET_AMOUNTS = [100, 500, 1000, 5000, 10000];
+
+// Hũ (Jackpot) - lưu theo guild
+const jackpotPool = new Map(); // guildId -> amount
+const JACKPOT_RATE = 0.0005; // 0.05% mỗi lần cược đóng góp vào hũ
+const JACKPOT_WIN_CONDITION = [1, 1, 1]; // 3 mặt 1 (hoặc có thể đổi)
+const JACKPOT_EMOJI = '🏆';
+
+function getJackpot(guildId) {
+    return jackpotPool.get(guildId) || 0;
+}
+
+function addToJackpot(guildId, amount) {
+    const current = getJackpot(guildId);
+    jackpotPool.set(guildId, current + amount);
+}
+
+function resetJackpot(guildId) {
+    jackpotPool.set(guildId, 0);
+}
 
 const COLORS = {
     textWhite: '#ffffff',
@@ -135,7 +157,7 @@ function roundRect(ctx, x, y, width, height, radius) {
 // Canvas cho session
 async function createSessionCanvas(session, timeLeft) {
     const width = 500;
-    const height = 180;
+    const height = 210;
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
@@ -156,23 +178,35 @@ async function createSessionCanvas(session, timeLeft) {
     ctx.font = 'bold 26px Arial';
     await drawTextWithEmoji(ctx, `TÀI XỈU #${session.round}`, DICE_EMOJI, width / 2, 38, 28, true);
 
+    // Jackpot display
+    const jackpotAmount = getJackpot(session.guildId);
+    ctx.font = 'bold 16px Arial';
+    ctx.fillStyle = '#ff6b6b';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${JACKPOT_EMOJI} HŨ: ${jackpotAmount.toLocaleString()}đ`, width / 2, 58);
+
     // Time + Players
     ctx.font = '18px Arial';
     ctx.fillStyle = timeLeft <= 10 ? COLORS.textRed : COLORS.textWhite;
     ctx.textAlign = 'center';
-    ctx.fillText(`${timeLeft}s | ${Object.keys(session.bets).length} người chơi`, width / 2, 68);
+    ctx.fillText(`${timeLeft}s | ${Object.keys(session.bets).length} người chơi`, width / 2, 80);
 
     // Stats
-    let taiTotal = 0, xiuTotal = 0;
+    let taiTotal = 0, xiuTotal = 0, taiCount = 0, xiuCount = 0;
     Object.values(session.bets).forEach(bet => {
-        if (bet.choice === 'tai') taiTotal += bet.amount;
-        else xiuTotal += bet.amount;
+        if (bet.choice === 'tai') {
+            taiTotal += bet.amount;
+            taiCount++;
+        } else {
+            xiuTotal += bet.amount;
+            xiuCount++;
+        }
     });
 
     // TÀI box
     const boxWidth = 180;
     const boxHeight = 70;
-    const boxY = 90;
+    const boxY = 120;
 
     roundRect(ctx, 40, boxY, boxWidth, boxHeight, 10);
     ctx.fillStyle = '#2d3436';
@@ -182,11 +216,11 @@ async function createSessionCanvas(session, timeLeft) {
     ctx.stroke();
 
     ctx.fillStyle = COLORS.tai;
-    ctx.font = 'bold 20px Arial';
-    ctx.fillText('TÀI', 40 + boxWidth / 2, boxY + 28);
+    ctx.font = 'bold 18px Arial';
+    ctx.fillText(`TÀI (${taiCount})`, 40 + boxWidth / 2, boxY + 25);
     ctx.fillStyle = COLORS.textGold;
     ctx.font = 'bold 18px Arial';
-    ctx.fillText(`${taiTotal.toLocaleString()}đ`, 40 + boxWidth / 2, boxY + 55);
+    ctx.fillText(`${taiTotal.toLocaleString()}đ`, 40 + boxWidth / 2, boxY + 52);
 
     // XỈU box
     roundRect(ctx, width - 40 - boxWidth, boxY, boxWidth, boxHeight, 10);
@@ -197,33 +231,38 @@ async function createSessionCanvas(session, timeLeft) {
     ctx.stroke();
 
     ctx.fillStyle = COLORS.xiu;
-    ctx.font = 'bold 20px Arial';
-    ctx.fillText('XỈU', width - 40 - boxWidth / 2, boxY + 28);
+    ctx.font = 'bold 18px Arial';
+    ctx.fillText(`XỈU (${xiuCount})`, width - 40 - boxWidth / 2, boxY + 25);
     ctx.fillStyle = COLORS.textGold;
     ctx.font = 'bold 18px Arial';
-    ctx.fillText(`${xiuTotal.toLocaleString()}đ`, width - 40 - boxWidth / 2, boxY + 55);
+    ctx.fillText(`${xiuTotal.toLocaleString()}đ`, width - 40 - boxWidth / 2, boxY + 52);
 
     return canvas.toBuffer('image/png');
 }
 
 // Canvas kết quả session
-async function createResultCanvas(session, dice, total, winners, losers) {
+async function createResultCanvas(session, dice, total, winners, losers, isJackpot = false, jackpotAmount = 0) {
     const width = 500;
-    const height = 320;
+    const height = isJackpot && jackpotAmount > 0 ? 360 : 320;
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
     const result = total >= 11 ? 'tai' : 'xiu';
 
-    // Background
+    // Background - đổi màu nếu trúng jackpot
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, result === 'tai' ? '#4a1a1a' : '#1a1a4a');
-    gradient.addColorStop(1, '#1a1a2e');
+    if (isJackpot && jackpotAmount > 0) {
+        gradient.addColorStop(0, '#4a3a00');
+        gradient.addColorStop(1, '#1a1a0e');
+    } else {
+        gradient.addColorStop(0, result === 'tai' ? '#4a1a1a' : '#1a1a4a');
+        gradient.addColorStop(1, '#1a1a2e');
+    }
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
 
-    // Border
-    ctx.strokeStyle = result === 'tai' ? COLORS.tai : COLORS.xiu;
+    // Border - vàng nếu jackpot
+    ctx.strokeStyle = isJackpot && jackpotAmount > 0 ? '#ffd700' : (result === 'tai' ? COLORS.tai : COLORS.xiu);
     ctx.lineWidth = 4;
     ctx.strokeRect(5, 5, width - 10, height - 10);
 
@@ -233,10 +272,19 @@ async function createResultCanvas(session, dice, total, winners, losers) {
     ctx.textAlign = 'center';
     ctx.fillText(`KẾT QUẢ PHIÊN #${session.round}`, width / 2, 35);
 
+    // Hiển thị thông báo jackpot nếu trúng
+    let offsetY = 0;
+    if (isJackpot && jackpotAmount > 0) {
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 20px Arial';
+        ctx.fillText(`${JACKPOT_EMOJI} NỔ HŨ: ${jackpotAmount.toLocaleString()}đ! ${JACKPOT_EMOJI}`, width / 2, 55);
+        offsetY = 20;
+    }
+
     // Dice
     const diceSize = 70;
     const diceStartX = (width - (diceSize * 3 + 20)) / 2;
-    const diceY = 50;
+    const diceY = 50 + offsetY;
 
     for (let i = 0; i < 3; i++) {
         const x = diceStartX + i * (diceSize + 10);
@@ -244,7 +292,7 @@ async function createResultCanvas(session, dice, total, winners, losers) {
         roundRect(ctx, x, diceY, diceSize, diceSize, 10);
         ctx.fillStyle = '#0f3460';
         ctx.fill();
-        ctx.strokeStyle = '#e94560';
+        ctx.strokeStyle = isJackpot && jackpotAmount > 0 ? '#ffd700' : '#e94560';
         ctx.lineWidth = 2;
         ctx.stroke();
 
@@ -254,34 +302,46 @@ async function createResultCanvas(session, dice, total, winners, losers) {
     // Result
     ctx.font = 'bold 28px Arial';
     ctx.fillStyle = result === 'tai' ? COLORS.tai : COLORS.xiu;
-    ctx.fillText(`${total} -> ${result === 'tai' ? 'TÀI' : 'XỈU'}`, width / 2, 155);
+    ctx.fillText(`${total} -> ${result === 'tai' ? 'TÀI' : 'XỈU'}`, width / 2, 155 + offsetY);
 
     // Winners & Losers
     ctx.font = '14px Arial';
     ctx.textAlign = 'left';
     
-    let y = 185;
+    let y = 185 + offsetY;
     if (winners.length > 0) {
         ctx.fillStyle = COLORS.textGreen;
+        ctx.font = 'bold 14px Arial';
         ctx.fillText(`Thắng (${winners.length}):`, 30, y);
         y += 20;
+        ctx.font = '13px Arial';
         winners.slice(0, 3).forEach(w => {
-            ctx.fillText(`   +${w.win.toLocaleString()}đ`, 30, y);
+            // Cắt ngắn username nếu quá dài
+            const name = w.username.length > 12 ? w.username.slice(0, 12) + '...' : w.username;
+            let displayText = `${name}: +${w.win.toLocaleString()}đ`;
+            if (w.jackpot) {
+                displayText += ` (+${JACKPOT_EMOJI}${w.jackpot.toLocaleString()})`;
+            }
+            ctx.fillText(displayText, 30, y);
             y += 18;
         });
         if (winners.length > 3) {
-            ctx.fillText(`   ... và ${winners.length - 3} người khác`, 30, y);
+            ctx.fillText(`... và ${winners.length - 3} người khác`, 30, y);
         }
     }
 
-    y = 185;
+    y = 185 + offsetY;
     if (losers.length > 0) {
         ctx.fillStyle = COLORS.textRed;
         ctx.textAlign = 'right';
+        ctx.font = 'bold 14px Arial';
         ctx.fillText(`Thua (${losers.length}):`, width - 30, y);
         y += 20;
+        ctx.font = '13px Arial';
         losers.slice(0, 3).forEach(l => {
-            ctx.fillText(`-${l.amount.toLocaleString()}đ`, width - 30, y);
+            // Cắt ngắn username nếu quá dài
+            const name = l.username.length > 12 ? l.username.slice(0, 12) + '...' : l.username;
+            ctx.fillText(`${name}: -${l.amount.toLocaleString()}đ`, width - 30, y);
             y += 18;
         });
         if (losers.length > 3) {
@@ -312,12 +372,16 @@ function createSessionUI(session, timeLeft, imageBuffer) {
     // Mức cược
     container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
-            BET_AMOUNTS.map(amount =>
+            ...BET_AMOUNTS.map(amount =>
                 new ButtonBuilder()
                     .setCustomId(`txs_bet_${amount}`)
                     .setLabel(amount >= 1000 ? amount/1000 + 'K' : String(amount))
                     .setStyle(ButtonStyle.Secondary)
-            )
+            ),
+            new ButtonBuilder()
+                .setCustomId('txs_custom_bet')
+                .setLabel('✏️')
+                .setStyle(ButtonStyle.Primary)
         )
     );
 
@@ -344,9 +408,17 @@ function createSessionUI(session, timeLeft, imageBuffer) {
     };
 }
 
-function createResultUI(session, imageBuffer) {
+function createResultUI(session, imageBuffer, isJackpot = false, jackpotAmount = 0, jackpotWinnerCount = 0) {
     const attachment = new AttachmentBuilder(imageBuffer, { name: 'result.png' });
-    const container = new ContainerBuilder().setAccentColor(0xE74C3C);
+    const container = new ContainerBuilder().setAccentColor(isJackpot && jackpotAmount > 0 ? 0xFFD700 : 0xE74C3C);
+
+    // Thông báo nổ hũ
+    if (isJackpot && jackpotAmount > 0 && jackpotWinnerCount > 0) {
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(`# ${JACKPOT_EMOJI} NỔ HŨ! ${JACKPOT_EMOJI}\n**${jackpotWinnerCount}** người thắng chia nhau **${jackpotAmount.toLocaleString()}đ** từ hũ!`)
+        );
+        container.addSeparatorComponents(new SeparatorBuilder().setDivider(true));
+    }
 
     container.addMediaGalleryComponents(
         new MediaGalleryBuilder().addItems({ media: { url: 'attachment://result.png' } })
@@ -382,24 +454,59 @@ async function runSession(client, channelId) {
             const total = dice.reduce((a, b) => a + b, 0);
             const result = total >= 11 ? 'tai' : 'xiu';
 
+            // Kiểm tra jackpot - 3 mặt giống nhau
+            const isJackpot = dice[0] === dice[1] && dice[1] === dice[2];
+            const jackpotAmount = getJackpot(session.guildId);
+            let jackpotWinners = [];
+
             const winners = [];
             const losers = [];
 
             // Xử lý kết quả
             for (const [oderId, bet] of Object.entries(session.bets)) {
                 const won = bet.choice === result;
+                // Lấy username
+                let username = 'Unknown';
+                try {
+                    const user = await client.users.fetch(oderId);
+                    username = user.displayName || user.username || 'Unknown';
+                } catch (e) {}
+                
                 if (won) {
                     const balance = await client.getBalance(oderId);
-                    const winAmount = Math.floor(bet.amount * 0.8);
+                    let winAmount = Math.floor(bet.amount * 0.8);
+                    
+                    // Nếu trúng jackpot - chia đều cho những người thắng
+                    let jackpotShare = 0;
+                    if (isJackpot && jackpotAmount > 0) {
+                        jackpotWinners.push({ oderId, username });
+                    }
+                    
                     await client.setBalance(oderId, balance + bet.amount + winAmount);
-                    winners.push({ oderId, win: winAmount });
+                    winners.push({ oderId, username, win: winAmount, total: bet.amount + winAmount });
                 } else {
-                    losers.push({ oderId, amount: bet.amount });
+                    losers.push({ oderId, username, amount: bet.amount });
                 }
             }
 
-            const resultImage = await createResultCanvas(session, dice, total, winners, losers);
-            await msg.edit(createResultUI(session, resultImage));
+            // Chia jackpot cho người thắng
+            if (isJackpot && jackpotAmount > 0 && jackpotWinners.length > 0) {
+                const sharePerWinner = Math.floor(jackpotAmount / jackpotWinners.length);
+                for (const winner of jackpotWinners) {
+                    const balance = await client.getBalance(winner.oderId);
+                    await client.setBalance(winner.oderId, balance + sharePerWinner);
+                    // Cập nhật số tiền thắng trong winners
+                    const winnerEntry = winners.find(w => w.oderId === winner.oderId);
+                    if (winnerEntry) {
+                        winnerEntry.jackpot = sharePerWinner;
+                        winnerEntry.total += sharePerWinner;
+                    }
+                }
+                resetJackpot(session.guildId);
+            }
+
+            const resultImage = await createResultCanvas(session, dice, total, winners, losers, isJackpot, jackpotAmount);
+            await msg.edit(createResultUI(session, resultImage, isJackpot, jackpotAmount, jackpotWinners.length));
 
             setTimeout(() => {
                 if (activeSessions.has(channelId)) {
@@ -426,13 +533,14 @@ async function runSession(client, channelId) {
 module.exports = {
     async startSession(interaction) {
         const channelId = interaction.channel.id;
+        const guildId = interaction.guild.id;
         
         if (activeSessions.has(channelId)) {
             return interaction.reply({ content: '❌ Đã có phiên game trong kênh này!', flags: MessageFlags.Ephemeral });
         }
 
         activeSessions.set(channelId, {
-            channelId, round: 1, bets: {}, userSelections: {}, messageId: null, interval: null
+            channelId, guildId, round: 1, bets: {}, userSelections: {}, messageId: null, interval: null
         });
 
         await interaction.reply({ content: '🎲 **Phiên Tài Xỉu tự động bắt đầu!** (60s/phiên)', flags: MessageFlags.Ephemeral });
@@ -471,27 +579,31 @@ module.exports = {
                     return interaction.reply({ content: '❌ Không đủ tiền!', flags: MessageFlags.Ephemeral });
                 }
                 
-                // Hoàn tiền cược cũ nếu có
-                if (session.bets[userId]) {
-                    const oldAmount = session.bets[userId].amount;
-                    await interaction.client.setBalance(userId, balance + oldAmount);
-                }
-                
                 session.userSelections[userId].amount = amount;
                 
                 if (session.userSelections[userId].choice) {
-                    // Đã chọn Tài/Xỉu, trừ tiền và lưu bet
+                    // Đã chọn Tài/Xỉu trước đó, cược thêm vào choice đó
                     const newBalance = await interaction.client.getBalance(userId);
                     if (amount > newBalance) {
                         return interaction.reply({ content: '❌ Không đủ tiền!', flags: MessageFlags.Ephemeral });
                     }
                     await interaction.client.setBalance(userId, newBalance - amount);
-                    session.bets[userId] = {
-                        amount,
-                        choice: session.userSelections[userId].choice
-                    };
+                    
+                    // Đóng góp vào hũ (0.05%)
+                    const jackpotContrib = Math.floor(amount * JACKPOT_RATE);
+                    if (jackpotContrib > 0) {
+                        addToJackpot(session.guildId, jackpotContrib);
+                    }
+                    
+                    // Cộng dồn tiền cược
+                    if (!session.bets[userId]) {
+                        session.bets[userId] = { amount: 0, choice: session.userSelections[userId].choice };
+                    }
+                    session.bets[userId].amount += amount;
+                    
+                    const totalBet = session.bets[userId].amount;
                     return interaction.reply({ 
-                        content: `✅ Đã cược **${amount.toLocaleString()}đ** vào **${session.userSelections[userId].choice === 'tai' ? '🔴 TÀI' : '🔵 XỈU'}**!`, 
+                        content: `✅ Đã cược thêm **${amount.toLocaleString()}đ** vào **${session.userSelections[userId].choice === 'tai' ? '🔴 TÀI' : '🔵 XỈU'}** (tổng: ${totalBet.toLocaleString()}đ)!`, 
                         flags: MessageFlags.Ephemeral 
                     });
                 }
@@ -513,28 +625,125 @@ module.exports = {
                 const balance = await interaction.client.getBalance(userId);
                 const amount = session.userSelections[userId].amount;
                 
-                // Hoàn tiền cược cũ nếu có
-                if (session.bets[userId]) {
-                    const oldAmount = session.bets[userId].amount;
-                    await interaction.client.setBalance(userId, balance + oldAmount);
+                // Kiểm tra đã cược bên kia chưa
+                if (session.bets[userId] && session.bets[userId].choice && session.bets[userId].choice !== choice) {
+                    return interaction.reply({ 
+                        content: `❌ Bạn đã cược **${session.bets[userId].amount.toLocaleString()}đ** vào **${session.bets[userId].choice === 'tai' ? '🔴 TÀI' : '🔵 XỈU'}** rồi! Không thể đổi phe.`, 
+                        flags: MessageFlags.Ephemeral 
+                    });
                 }
                 
-                const newBalance = await interaction.client.getBalance(userId);
-                if (amount > newBalance) {
+                if (amount > balance) {
                     return interaction.reply({ content: '❌ Không đủ tiền!', flags: MessageFlags.Ephemeral });
                 }
                 
-                // Trừ tiền và lưu bet
-                await interaction.client.setBalance(userId, newBalance - amount);
-                session.userSelections[userId].choice = choice;
-                session.bets[userId] = { amount, choice };
+                // Trừ tiền và cộng dồn bet
+                await interaction.client.setBalance(userId, balance - amount);
                 
+                // Đóng góp vào hũ (0.05%)
+                const jackpotContrib = Math.floor(amount * JACKPOT_RATE);
+                if (jackpotContrib > 0) {
+                    addToJackpot(session.guildId, jackpotContrib);
+                }
+                
+                session.userSelections[userId].choice = choice;
+                
+                if (!session.bets[userId]) {
+                    session.bets[userId] = { amount: 0, choice };
+                }
+                session.bets[userId].amount += amount;
+                session.bets[userId].choice = choice;
+                
+                const totalBet = session.bets[userId].amount;
                 return interaction.reply({ 
-                    content: `✅ Đã cược **${amount.toLocaleString()}đ** vào **${choice === 'tai' ? '🔴 TÀI' : '🔵 XỈU'}**!`, 
+                    content: `✅ Đã cược **${amount.toLocaleString()}đ** vào **${choice === 'tai' ? '🔴 TÀI' : '🔵 XỈU'}** (tổng: ${totalBet.toLocaleString()}đ)!`, 
                     flags: MessageFlags.Ephemeral 
                 });
             }
+
+            case 'custom_bet': {
+                const modal = new ModalBuilder()
+                    .setCustomId('txs_custom_bet_modal')
+                    .setTitle('Nhập mức cược tùy chỉnh');
+
+                const amountInput = new TextInputBuilder()
+                    .setCustomId('bet_amount')
+                    .setLabel('Số tiền cược')
+                    .setPlaceholder('Nhập số tiền (VD: 5000, 10k, 1m)')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true);
+
+                modal.addComponents(new ActionRowBuilder().addComponents(amountInput));
+                return interaction.showModal(modal);
+            }
         }
+    },
+
+    async handleModal(interaction) {
+        if (interaction.customId !== 'txs_custom_bet_modal') return;
+
+        const channelId = interaction.channel.id;
+        const session = activeSessions.get(channelId);
+        
+        if (!session) {
+            return interaction.reply({ content: '❌ Phiên game đã kết thúc!', flags: MessageFlags.Ephemeral });
+        }
+
+        const userId = interaction.user.id;
+        const amountStr = interaction.fields.getTextInputValue('bet_amount');
+        
+        // Parse amount (hỗ trợ k, m)
+        let amount = 0;
+        const lower = amountStr.toLowerCase().trim();
+        if (lower.endsWith('m')) {
+            amount = parseFloat(lower) * 1000000;
+        } else if (lower.endsWith('k')) {
+            amount = parseFloat(lower) * 1000;
+        } else {
+            amount = parseFloat(amountStr.replace(/,/g, ''));
+        }
+
+        if (isNaN(amount) || amount <= 0) {
+            return interaction.reply({ content: '❌ Số tiền không hợp lệ!', flags: MessageFlags.Ephemeral });
+        }
+
+        amount = Math.floor(amount);
+        const balance = await interaction.client.getBalance(userId);
+
+        if (amount > balance) {
+            return interaction.reply({ content: `❌ Không đủ tiền! Bạn có **${balance.toLocaleString()}đ**`, flags: MessageFlags.Ephemeral });
+        }
+
+        if (!session.userSelections[userId]) {
+            session.userSelections[userId] = { amount: null, choice: null };
+        }
+
+        session.userSelections[userId].amount = amount;
+
+        if (session.userSelections[userId].choice) {
+            // Đã chọn Tài/Xỉu trước đó, cược thêm vào choice đó
+            const newBalance = await interaction.client.getBalance(userId);
+            if (amount > newBalance) {
+                return interaction.reply({ content: '❌ Không đủ tiền!', flags: MessageFlags.Ephemeral });
+            }
+            await interaction.client.setBalance(userId, newBalance - amount);
+            
+            if (!session.bets[userId]) {
+                session.bets[userId] = { amount: 0, choice: session.userSelections[userId].choice };
+            }
+            session.bets[userId].amount += amount;
+            
+            const totalBet = session.bets[userId].amount;
+            return interaction.reply({ 
+                content: `✅ Đã cược thêm **${amount.toLocaleString()}đ** vào **${session.userSelections[userId].choice === 'tai' ? '🔴 TÀI' : '🔵 XỈU'}** (tổng: ${totalBet.toLocaleString()}đ)!`, 
+                flags: MessageFlags.Ephemeral 
+            });
+        }
+
+        return interaction.reply({ 
+            content: `✅ Đã chọn mức cược **${amount.toLocaleString()}đ**. Giờ hãy chọn TÀI hoặc XỈU!`, 
+            flags: MessageFlags.Ephemeral 
+        });
     },
 
     async handleSelect() {}

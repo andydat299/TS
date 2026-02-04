@@ -169,28 +169,23 @@ module.exports = {
                         const newBalance = currentBalance + actualAmount;
                         await User.setBalance(interaction.user.id, newBalance);
 
-                        const successEmbed = new EmbedBuilder()
-                            .setColor(0x00D166)
-                            .setTitle('✅ Nạp tiền thành công!')
-                            .addFields(
-                                { name: 'Số tiền', value: `${actualAmount.toLocaleString()}đ`, inline: true },
-                                { name: 'Mã nạp', value: topup.code, inline: true },
-                                { name: 'Số dư mới', value: `${newBalance.toLocaleString()}đ`, inline: true }
-                            )
-                            .setTimestamp();
-
-                        // Update message gốc
-                        const disabledRow = new ActionRowBuilder()
-                            .addComponents(
+                        // Update message gốc với Components V2
+                        const successContainer = new ContainerBuilder().setAccentColor(0x00D166);
+                        successContainer.addTextDisplayComponents(
+                            new TextDisplayBuilder().setContent(`# ✅ NẠP TIỀN THÀNH CÔNG\n\n💰 **Số tiền:** ${actualAmount.toLocaleString()}đ\n📝 **Mã nạp:** ${topup.code}\n💳 **Số dư mới:** ${newBalance.toLocaleString()}đ`)
+                        );
+                        successContainer.addActionRowComponents(
+                            new ActionRowBuilder().addComponents(
                                 new ButtonBuilder()
                                     .setCustomId('naptien_done')
                                     .setLabel('✅ Đã nạp thành công')
                                     .setStyle(ButtonStyle.Success)
                                     .setDisabled(true)
-                            );
+                            )
+                        );
 
-                        await interaction.message.edit({ components: [disabledRow] }).catch(() => {});
-                        return interaction.editReply({ embeds: [successEmbed] });
+                        await interaction.message.edit({ components: [successContainer], flags: MessageFlags.IsComponentsV2 }).catch(() => {});
+                        return interaction.editReply({ content: `✅ Nạp tiền thành công! Số tiền: **${actualAmount.toLocaleString()}đ** - Số dư mới: **${newBalance.toLocaleString()}đ**` });
 
                     } else if (action === 'cancel') {
                         const topup = await Topup.findPendingByCode(code);
@@ -198,21 +193,21 @@ module.exports = {
                             await Topup.updateOne({ _id: topup._id }, { status: 'expired' });
                         }
 
-                        const cancelEmbed = new EmbedBuilder()
-                            .setColor(0xFF4757)
-                            .setTitle('❌ Đã hủy lệnh nạp')
-                            .setDescription('Bạn có thể tạo lệnh nạp mới bằng `!naptien`');
-
-                        const disabledRow = new ActionRowBuilder()
-                            .addComponents(
+                        const container = new ContainerBuilder().setAccentColor(0xFF4757);
+                        container.addTextDisplayComponents(
+                            new TextDisplayBuilder().setContent(`# ❌ ĐÃ HỦY LỆNH NẠP\n\n> Bạn có thể tạo lệnh nạp mới bằng \`!naptien\``)
+                        );
+                        container.addActionRowComponents(
+                            new ActionRowBuilder().addComponents(
                                 new ButtonBuilder()
                                     .setCustomId('naptien_cancelled')
                                     .setLabel('❌ Đã hủy')
                                     .setStyle(ButtonStyle.Danger)
                                     .setDisabled(true)
-                            );
+                            )
+                        );
 
-                        await interaction.update({ embeds: [cancelEmbed], components: [disabledRow] });
+                        await interaction.update({ components: [container], flags: MessageFlags.IsComponentsV2 });
                         return;
                     }
                 }
@@ -615,6 +610,22 @@ module.exports = {
                 }
             } catch (error) {
                 console.error(error);
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ content: '❌ Có lỗi xảy ra!', flags: MessageFlags.Ephemeral });
+                }
+            }
+        }
+
+        // Xử lý Modal Submit
+        if (interaction.isModalSubmit()) {
+            try {
+                if (interaction.customId === 'txs_custom_bet_modal') {
+                    return await taixiuSession.handleModal(interaction);
+                } else if (interaction.customId === 'bcs_custom_bet_modal') {
+                    return await baucuaSession.handleModal(interaction);
+                }
+            } catch (error) {
+                console.error('Modal error:', error);
                 if (!interaction.replied && !interaction.deferred) {
                     await interaction.reply({ content: '❌ Có lỗi xảy ra!', flags: MessageFlags.Ephemeral });
                 }

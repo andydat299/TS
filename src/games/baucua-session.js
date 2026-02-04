@@ -7,7 +7,10 @@ const {
     ButtonStyle,
     ActionRowBuilder,
     MessageFlags,
-    AttachmentBuilder
+    AttachmentBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle
 } = require('discord.js');
 const { createCanvas, loadImage } = require('canvas');
 const { getEmojiURL, isCustomEmoji, buttonEmoji } = require('../utils/emoji');
@@ -182,10 +185,12 @@ async function createSessionCanvas(session, timeLeft) {
 
     // Stats cho từng con vật
     const stats = {};
-    SYMBOL_LIST.forEach(s => stats[s] = 0);
+    const counts = {}; // Đếm số người cược mỗi con
+    SYMBOL_LIST.forEach(s => { stats[s] = 0; counts[s] = 0; });
     Object.values(session.bets).forEach(bet => {
         Object.entries(bet.choices).forEach(([symbol, amount]) => { 
-            stats[symbol] += amount; 
+            stats[symbol] += amount;
+            counts[symbol]++;
         });
     });
 
@@ -206,6 +211,7 @@ async function createSessionCanvas(session, timeLeft) {
         const symbol = SYMBOL_LIST[i];
         const data = SYMBOLS[symbol];
         const total = stats[symbol];
+        const count = counts[symbol];
 
         // Vẽ ô nền
         roundRect(ctx, x, y, cellWidth, cellHeight, 10);
@@ -216,14 +222,14 @@ async function createSessionCanvas(session, timeLeft) {
         ctx.stroke();
 
         // Icon bên trái - vẽ bằng hình học
-        drawAnimalIcon(ctx, symbol, x + 32, y + cellHeight / 2, 35);
+        await drawAnimalIcon(ctx, symbol, x + 32, y + cellHeight / 2, 35);
 
-        // Tên con vật - bên phải trên
+        // Tên con vật + số người cược - bên phải trên
         ctx.fillStyle = data.color;
-        ctx.font = 'bold 15px Arial';
+        ctx.font = 'bold 14px Arial';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
-        ctx.fillText(data.name, x + cellWidth - 15, y + 20);
+        ctx.fillText(`${data.name} (${count})`, x + cellWidth - 15, y + 20);
 
         // Số tiền cược - bên phải dưới
         ctx.fillStyle = total > 0 ? COLORS.textGreen : COLORS.textWhite;
@@ -261,69 +267,76 @@ async function createResultCanvas(session, results, winners, losers) {
     ctx.textAlign = 'center';
     ctx.fillText(`KẾT QUẢ PHIÊN #${session.round}`, width / 2, 32);
 
-    // 3 kết quả - vẽ emoji
-    const iconSize = 50;
-    const startResultX = width / 2 - (3 * iconSize + 2 * 20) / 2;
+    // 3 kết quả - vẽ emoji (căn giữa chính xác)
+    const iconSize = 55;
+    const iconGap = 25;
+    const totalIconWidth = 3 * iconSize + 2 * iconGap;
+    const startIconX = (width - totalIconWidth) / 2 + iconSize / 2;
+    const iconY = 75;
+    
     for (let i = 0; i < 3; i++) {
-        const rX = startResultX + i * (iconSize + 20) + iconSize / 2;
-        const rY = 70;
-        await drawAnimalIcon(ctx, results[i], rX, rY, iconSize);
+        const rX = startIconX + i * (iconSize + iconGap);
+        await drawAnimalIcon(ctx, results[i], rX, iconY, iconSize);
     }
 
     // Count results
     const counts = {};
     results.forEach(r => { counts[r] = (counts[r] || 0) + 1; });
 
-    // Hiển thị count (dùng text)
+    // Hiển thị count (dùng text) - đặt bên dưới icons
     ctx.font = '14px Arial';
     ctx.fillStyle = COLORS.textWhite;
     ctx.textAlign = 'center';
     let countText = SYMBOL_LIST.map(s => counts[s] ? `${SYMBOLS[s].name}x${counts[s]}` : '').filter(Boolean).join('  ');
-    ctx.fillText(countText, width / 2, 120);
+    ctx.fillText(countText, width / 2, iconY + iconSize / 2 + 25);
 
     // Separator
     ctx.strokeStyle = '#444';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(30, 135);
-    ctx.lineTo(width - 30, 135);
+    ctx.moveTo(30, 150);
+    ctx.lineTo(width - 30, 150);
     ctx.stroke();
 
-    // Winners
-    let y = 160;
+    // Winners - bên trái
+    let yLeft = 175;
     ctx.textAlign = 'left';
     
     if (winners.length > 0) {
         ctx.fillStyle = COLORS.textGreen;
         ctx.font = 'bold 15px Arial';
-        ctx.fillText(`Thắng (${winners.length}):`, 30, y);
-        y += 22;
+        ctx.fillText(`Thắng (${winners.length}):`, 30, yLeft);
+        yLeft += 22;
         ctx.font = '13px Arial';
         winners.slice(0, 4).forEach(w => {
-            ctx.fillText(`   +${w.win.toLocaleString()}đ`, 30, y);
-            y += 18;
+            // Cắt ngắn username nếu quá dài
+            const name = w.username.length > 12 ? w.username.slice(0, 12) + '...' : w.username;
+            ctx.fillText(`${name}: +${w.win.toLocaleString()}đ`, 30, yLeft);
+            yLeft += 18;
         });
         if (winners.length > 4) {
-            ctx.fillText(`   ... và ${winners.length - 4} người khác`, 30, y);
+            ctx.fillText(`... và ${winners.length - 4} người khác`, 30, yLeft);
         }
     }
 
-    // Losers
-    y = 160;
+    // Losers - bên phải
+    let yRight = 175;
     ctx.textAlign = 'right';
     
     if (losers.length > 0) {
         ctx.fillStyle = COLORS.textRed;
         ctx.font = 'bold 15px Arial';
-        ctx.fillText(`Thua (${losers.length}):`, width - 30, y);
-        y += 22;
+        ctx.fillText(`Thua (${losers.length}):`, width - 30, yRight);
+        yRight += 22;
         ctx.font = '13px Arial';
         losers.slice(0, 4).forEach(l => {
-            ctx.fillText(`-${l.amount.toLocaleString()}đ`, width - 30, y);
-            y += 18;
+            // Cắt ngắn username nếu quá dài
+            const name = l.username.length > 12 ? l.username.slice(0, 12) + '...' : l.username;
+            ctx.fillText(`${name}: -${l.amount.toLocaleString()}đ`, width - 30, yRight);
+            yRight += 18;
         });
         if (losers.length > 4) {
-            ctx.fillText(`... và ${losers.length - 4} người khác`, width - 30, y);
+            ctx.fillText(`... và ${losers.length - 4} người khác`, width - 30, yRight);
         }
     }
 
@@ -349,12 +362,16 @@ function createSessionUI(session, timeLeft, imageBuffer) {
     // Mức cược
     container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
-            BET_AMOUNTS.map(amount =>
+            ...BET_AMOUNTS.map(amount =>
                 new ButtonBuilder()
                     .setCustomId(`bcs_bet_${amount}`)
                     .setLabel(amount >= 1000 ? amount/1000 + 'K' : String(amount))
                     .setStyle(ButtonStyle.Secondary)
-            )
+            ),
+            new ButtonBuilder()
+                .setCustomId('bcs_custom_bet')
+                .setLabel('✏️')
+                .setStyle(ButtonStyle.Primary)
         )
     );
 
@@ -443,6 +460,13 @@ async function runSession(client, channelId) {
                 let totalWin = 0;
                 let totalLoss = 0;
                 
+                // Lấy username
+                let username = 'Unknown';
+                try {
+                    const user = await client.users.fetch(oderId);
+                    username = user.displayName || user.username || 'Unknown';
+                } catch (e) {}
+                
                 Object.entries(bet.choices).forEach(([symbol, amount]) => {
                     const count = counts[symbol] || 0;
                     if (count > 0) {
@@ -455,9 +479,9 @@ async function runSession(client, channelId) {
                 if (totalWin > 0) {
                     const balance = await client.getBalance(oderId);
                     await client.setBalance(oderId, balance + totalWin);
-                    winners.push({ oderId, win: totalWin - totalLoss });
+                    winners.push({ oderId, username, win: totalWin - totalLoss });
                 } else if (totalLoss > 0) {
-                    losers.push({ oderId, amount: totalLoss });
+                    losers.push({ oderId, username, amount: totalLoss });
                 }
             }
 
@@ -571,7 +595,70 @@ module.exports = {
                     flags: MessageFlags.Ephemeral 
                 });
             }
+
+            case 'custom_bet': {
+                const modal = new ModalBuilder()
+                    .setCustomId('bcs_custom_bet_modal')
+                    .setTitle('Nhập mức cược tùy chỉnh');
+
+                const amountInput = new TextInputBuilder()
+                    .setCustomId('bet_amount')
+                    .setLabel('Số tiền cược')
+                    .setPlaceholder('Nhập số tiền (VD: 5000, 10k, 1m)')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true);
+
+                modal.addComponents(new ActionRowBuilder().addComponents(amountInput));
+                return interaction.showModal(modal);
+            }
         }
+    },
+
+    async handleModal(interaction) {
+        if (interaction.customId !== 'bcs_custom_bet_modal') return;
+
+        const channelId = interaction.channel.id;
+        const session = activeSessions.get(channelId);
+        
+        if (!session) {
+            return interaction.reply({ content: '❌ Phiên game đã kết thúc!', flags: MessageFlags.Ephemeral });
+        }
+
+        const userId = interaction.user.id;
+        const amountStr = interaction.fields.getTextInputValue('bet_amount');
+        
+        // Parse amount (hỗ trợ k, m)
+        let amount = 0;
+        const lower = amountStr.toLowerCase().trim();
+        if (lower.endsWith('m')) {
+            amount = parseFloat(lower) * 1000000;
+        } else if (lower.endsWith('k')) {
+            amount = parseFloat(lower) * 1000;
+        } else {
+            amount = parseFloat(amountStr.replace(/,/g, ''));
+        }
+
+        if (isNaN(amount) || amount <= 0) {
+            return interaction.reply({ content: '❌ Số tiền không hợp lệ!', flags: MessageFlags.Ephemeral });
+        }
+
+        amount = Math.floor(amount);
+        const balance = await interaction.client.getBalance(userId);
+
+        if (amount > balance) {
+            return interaction.reply({ content: `❌ Không đủ tiền! Bạn có **${balance.toLocaleString()}đ**`, flags: MessageFlags.Ephemeral });
+        }
+
+        if (!session.userSelections[userId]) {
+            session.userSelections[userId] = { amount: null };
+        }
+
+        session.userSelections[userId].amount = amount;
+
+        return interaction.reply({ 
+            content: `✅ Đã chọn mức cược **${amount.toLocaleString()}đ**. Giờ hãy chọn con vật!`, 
+            flags: MessageFlags.Ephemeral 
+        });
     },
 
     async handleSelect() {}
