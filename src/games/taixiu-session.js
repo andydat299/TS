@@ -14,28 +14,72 @@ const {
 } = require('discord.js');
 const { createCanvas, loadImage } = require('canvas');
 const { isCustomEmoji, getEmojiURL } = require('../utils/emoji');
+const { GameSession, Jackpot } = require('../database/models/GameSession');
 
 const activeSessions = new Map();
 const SESSION_DURATION = 60;
 const BET_AMOUNTS = [100, 1000, 5000, 10000]; // Giảm còn 4 để có chỗ cho nút tùy chỉnh
 
 // Hũ (Jackpot) - lưu theo guild
-const jackpotPool = new Map(); // guildId -> amount
+const jackpotPool = new Map(); // guildId -> amount (cache)
 const JACKPOT_RATE = 0.0005; // 0.05% mỗi lần cược đóng góp vào hũ
 const JACKPOT_WIN_CONDITION = [1, 1, 1]; // 3 mặt 1 (hoặc có thể đổi)
 const JACKPOT_EMOJI = '🏆';
 
-function getJackpot(guildId) {
-    return jackpotPool.get(guildId) || 0;
+async function getJackpot(guildId) {
+    // Kiểm tra cache trước
+    if (jackpotPool.has(guildId)) {
+        return jackpotPool.get(guildId);
+    }
+    // Load từ DB
+    const doc = await Jackpot.findOne({ guildId, gameType: 'taixiu' });
+    const amount = doc ? doc.amount : 0;
+    jackpotPool.set(guildId, amount);
+    return amount;
 }
 
-function addToJackpot(guildId, amount) {
-    const current = getJackpot(guildId);
-    jackpotPool.set(guildId, current + amount);
+async function addToJackpot(guildId, amount) {
+    const current = await getJackpot(guildId);
+    const newAmount = current + amount;
+    jackpotPool.set(guildId, newAmount);
+    // Lưu vào DB
+    await Jackpot.findOneAndUpdate(
+        { guildId, gameType: 'taixiu' },
+        { amount: newAmount, updatedAt: new Date() },
+        { upsert: true }
+    );
 }
 
-function resetJackpot(guildId) {
+async function resetJackpot(guildId) {
     jackpotPool.set(guildId, 0);
+    await Jackpot.findOneAndUpdate(
+        { guildId, gameType: 'taixiu' },
+        { amount: 0, updatedAt: new Date() },
+        { upsert: true }
+    );
+}
+
+// Lưu session vào DB
+async function saveSession(session) {
+    await GameSession.findOneAndUpdate(
+        { channelId: session.channelId },
+        {
+            guildId: session.guildId,
+            gameType: 'taixiu',
+            round: session.round,
+            bets: session.bets,
+            userSelections: session.userSelections,
+            messageId: session.messageId,
+            isActive: true,
+            updatedAt: new Date()
+        },
+        { upsert: true }
+    );
+}
+
+// Xóa session khỏi DB
+async function deleteSession(channelId) {
+    await GameSession.deleteOne({ channelId });
 }
 
 const COLORS = {
@@ -179,7 +223,7 @@ async function createSessionCanvas(session, timeLeft) {
     await drawTextWithEmoji(ctx, `TÀI XỈU #${session.round}`, DICE_EMOJI, width / 2, 38, 28, true);
 
     // Jackpot display
-    const jackpotAmount = getJackpot(session.guildId);
+    const jackpotAmount = await getJackpot(session.guildId);
     ctx.font = 'bold 16px Arial';
     ctx.fillStyle = '#ff6b6b';
     ctx.textAlign = 'center';
@@ -379,7 +423,7 @@ function createSessionUI(session, timeLeft, imageBuffer) {
                     .setStyle(ButtonStyle.Secondary)
             ),
             new ButtonBuilder()
-                .setCustomId('txs_custom_bet')
+                .setCustomId('txs_custombet')
                 .setLabel('✏️')
                 .setStyle(ButtonStyle.Primary)
         )
@@ -456,7 +500,7 @@ async function runSession(client, channelId) {
 
             // Kiểm tra jackpot - 3 mặt giống nhau
             const isJackpot = dice[0] === dice[1] && dice[1] === dice[2];
-            const jackpotAmount = getJackpot(session.guildId);
+            const jackpotAmount = await getJackpot(session.guildId);
             let jackpotWinners = [];
 
             const winners = [];
@@ -502,21 +546,27 @@ async function runSession(client, channelId) {
                         winnerEntry.total += sharePerWinner;
                     }
                 }
-                resetJackpot(session.guildId);
+                await resetJackpot(session.guildId);
             }
 
             const resultImage = await createResultCanvas(session, dice, total, winners, losers, isJackpot, jackpotAmount);
             await msg.edit(createResultUI(session, resultImage, isJackpot, jackpotAmount, jackpotWinners.length));
 
-            setTimeout(() => {
+            setTimeout(async () => {
                 if (activeSessions.has(channelId)) {
                     session.round++;
                     session.bets = {};
                     session.userSelections = {};
+                    await saveSession(session); // Lưu session mới
                     runSession(client, channelId);
                 }
             }, 5000);
             return;
+        }
+
+        // Lưu session định kỳ mỗi 10 giây
+        if (timeLeft % 10 === 0) {
+            await saveSession(session);
         }
 
         if (timeLeft % 10 === 0 || timeLeft <= 10) {
@@ -531,6 +581,53 @@ async function runSession(client, channelId) {
 }
 
 module.exports = {
+    // Khôi phục sessions từ DB khi bot khởi động
+    async restoreSessions(client) {
+        try {
+            const sessions = await GameSession.find({ gameType: 'taixiu', isActive: true });
+            console.log(`🎲 Đang khôi phục ${sessions.length} phiên Tài Xỉu...`);
+            
+            for (const doc of sessions) {
+                try {
+                    const channel = await client.channels.fetch(doc.channelId);
+                    if (!channel) {
+                        await deleteSession(doc.channelId);
+                        continue;
+                    }
+
+                    // Tạo session mới từ dữ liệu DB
+                    const session = {
+                        channelId: doc.channelId,
+                        guildId: doc.guildId,
+                        round: doc.round,
+                        bets: doc.bets || {},
+                        userSelections: doc.userSelections || {},
+                        messageId: null,
+                        interval: null
+                    };
+
+                    activeSessions.set(doc.channelId, session);
+                    
+                    // Bắt đầu phiên mới (reset bets vì phiên cũ đã hết hạn)
+                    session.bets = {};
+                    session.userSelections = {};
+                    
+                    await channel.send({ content: `🔄 **Bot đã khởi động lại! Tiếp tục phiên Tài Xỉu #${session.round}**` });
+                    runSession(client, doc.channelId);
+                    
+                    console.log(`  ✅ Khôi phục kênh ${doc.channelId} - Phiên #${doc.round}`);
+                } catch (err) {
+                    console.log(`  ❌ Không thể khôi phục kênh ${doc.channelId}:`, err.message);
+                    await deleteSession(doc.channelId);
+                }
+            }
+            
+            console.log(`🎲 Hoàn tất khôi phục phiên Tài Xỉu!`);
+        } catch (err) {
+            console.error('Lỗi khôi phục sessions:', err);
+        }
+    },
+
     async startSession(interaction) {
         const channelId = interaction.channel.id;
         const guildId = interaction.guild.id;
@@ -539,19 +636,23 @@ module.exports = {
             return interaction.reply({ content: '❌ Đã có phiên game trong kênh này!', flags: MessageFlags.Ephemeral });
         }
 
-        activeSessions.set(channelId, {
+        const session = {
             channelId, guildId, round: 1, bets: {}, userSelections: {}, messageId: null, interval: null
-        });
+        };
+        
+        activeSessions.set(channelId, session);
+        await saveSession(session); // Lưu vào DB
 
         await interaction.reply({ content: '🎲 **Phiên Tài Xỉu tự động bắt đầu!** (60s/phiên)', flags: MessageFlags.Ephemeral });
         runSession(interaction.client, channelId);
     },
 
-    stopSession(channelId) {
+    async stopSession(channelId) {
         const session = activeSessions.get(channelId);
         if (session) {
             if (session.interval) clearInterval(session.interval);
             activeSessions.delete(channelId);
+            await deleteSession(channelId); // Xóa khỏi DB
             return true;
         }
         return false;
@@ -661,9 +762,9 @@ module.exports = {
                 });
             }
 
-            case 'custom_bet': {
+            case 'custombet': {
                 const modal = new ModalBuilder()
-                    .setCustomId('txs_custom_bet_modal')
+                    .setCustomId('txs_custombet_modal')
                     .setTitle('Nhập mức cược tùy chỉnh');
 
                 const amountInput = new TextInputBuilder()
@@ -680,7 +781,7 @@ module.exports = {
     },
 
     async handleModal(interaction) {
-        if (interaction.customId !== 'txs_custom_bet_modal') return;
+        if (interaction.customId !== 'txs_custombet_modal') return;
 
         const channelId = interaction.channel.id;
         const session = activeSessions.get(channelId);

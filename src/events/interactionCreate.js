@@ -619,9 +619,9 @@ module.exports = {
         // Xử lý Modal Submit
         if (interaction.isModalSubmit()) {
             try {
-                if (interaction.customId === 'txs_custom_bet_modal') {
+                if (interaction.customId === 'txs_custombet_modal') {
                     return await taixiuSession.handleModal(interaction);
-                } else if (interaction.customId === 'bcs_custom_bet_modal') {
+                } else if (interaction.customId === 'bcs_custombet_modal') {
                     return await baucuaSession.handleModal(interaction);
                 }
             } catch (error) {
