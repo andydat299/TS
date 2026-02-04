@@ -10,11 +10,13 @@ const {
     AttachmentBuilder,
     ModalBuilder,
     TextInputBuilder,
-    TextInputStyle
+    TextInputStyle,
+    EmbedBuilder
 } = require('discord.js');
 const { createCanvas, loadImage } = require('canvas');
 const { getEmojiURL, isCustomEmoji, buttonEmoji } = require('../utils/emoji');
 const { GameSession } = require('../database/models/GameSession');
+const logger = require('../utils/logger');
 
 const activeSessions = new Map();
 const SESSION_DURATION = 60;
@@ -503,14 +505,52 @@ async function runSession(client, channelId) {
                 if (totalWin > 0) {
                     const balance = await client.getBalance(oderId);
                     await client.setBalance(oderId, balance + totalWin);
-                    winners.push({ oderId, username, win: totalWin - totalLoss });
+                    const stake = Object.values(bet.choices || {}).reduce((a,b)=>a+b,0);
+                    const profit = totalWin - stake;
+                    winners.push({ oderId, username, win: profit });
+                    // Log result (win)
+                    try { await logger.logResult({ game: 'baucua', guildId: session.guildId, channelId, round: session.round, userId: oderId, username, stake, win: profit }); } catch (e) {}
                 } else if (totalLoss > 0) {
+                    const stake = totalLoss;
+                    // Log result (loss)
+                    try { await logger.logResult({ game: 'baucua', guildId: session.guildId, channelId, round: session.round, userId: oderId, username, stake, win: 0 }); } catch (e) {}
                     losers.push({ oderId, username, amount: totalLoss });
                 }
             }
 
             const resultImage = await createResultCanvas(session, results, winners, losers);
             await msg.edit(createResultUI(session, resultImage));
+
+            // Gửi log thắng thua chi tiết vào kênh đã cấu hình (nếu có) - dùng embed và mention
+            try {
+                const GuildModel = require('../database/models/Guild');
+                const { gameLogChannel } = await GuildModel.getLogChannels(session.guildId);
+                if (gameLogChannel) {
+                    const ch = await client.channels.fetch(gameLogChannel).catch(() => null);
+                    if (ch && ch.send) {
+                        const lines = [];
+                        const mentions = new Set();
+                        winners.forEach(w => {
+                            lines.push(`✅ ${w.username} (<@${w.oderId}>) — win: ${w.win.toLocaleString()}đ`);
+                            mentions.add(`<@${w.oderId}>`);
+                        });
+                        losers.forEach(l => {
+                            lines.push(`❌ ${l.username} (<@${l.oderId}>) — stake: ${l.amount.toLocaleString()}đ`);
+                            mentions.add(`<@${l.oderId}>`);
+                        });
+                        if (lines.length === 0) lines.push('Không ai đặt cược ở vòng này.');
+
+                        const embed = new EmbedBuilder()
+                            .setTitle(`🎯 Bầu Cua #${session.round} - Kết quả`)
+                            .setColor(0xe74c3c)
+                            .setDescription(lines.join('\n'))
+                            .setTimestamp();
+
+                        // Do not put mentions in message content; keep mention text inside the embed description
+                        await ch.send({ embeds: [embed] }).catch(() => {});
+                    }
+                }
+            } catch (e) {}
 
             setTimeout(async () => {
                 if (activeSessions.has(channelId)) {
@@ -641,6 +681,8 @@ module.exports = {
                 }
                 
                 session.userSelections[userId].amount = amount;
+                // Log bet selection (amount chosen)
+                try { await logger.logBet({ game: 'baucua', guildId: session.guildId, channelId: session.channelId, round: session.round, userId, username: interaction.user.username, choice: null, amount }); } catch (e) {}
                 return interaction.reply({ 
                     content: `✅ Đã chọn mức cược **${amount.toLocaleString()}đ**. Giờ hãy chọn con vật!`, 
                     flags: MessageFlags.Ephemeral 
@@ -672,6 +714,8 @@ module.exports = {
                 session.bets[userId].choices[symbol] = (session.bets[userId].choices[symbol] || 0) + amount;
                 
                 const totalOnSymbol = session.bets[userId].choices[symbol];
+                // Log actual placed bet
+                try { await logger.logBet({ game: 'baucua', guildId: session.guildId, channelId: session.channelId, round: session.round, userId, username: interaction.user.username, choice: symbol, amount }); } catch (e) {}
                 return interaction.reply({ 
                     content: `✅ Đã cược **${amount.toLocaleString()}đ** vào **${SYMBOLS[symbol].emoji} ${SYMBOLS[symbol].name}** (tổng: ${totalOnSymbol.toLocaleString()}đ)`, 
                     flags: MessageFlags.Ephemeral 

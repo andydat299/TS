@@ -481,7 +481,7 @@ client.on('messageCreate', async (message) => {
             return message.reply('❌ Vui lòng tag user cần reset! Ví dụ: `!reset @user`');
         }
 
-        const defaultBalance = 10000;
+        const defaultBalance = 0;
         await client.setBalance(targetUser.id, defaultBalance);
         await message.reply(`✅ Đã reset số dư của ${targetUser} về **${defaultBalance.toLocaleString()}** 🪙`);
     }
@@ -494,7 +494,7 @@ client.on('messageCreate', async (message) => {
         }
 
         try {
-            const defaultBalance = 10000;
+            const defaultBalance = 0;
             await User.updateMany({}, { balance: defaultBalance });
             
             const userCount = await User.countDocuments();

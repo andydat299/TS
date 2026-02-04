@@ -10,11 +10,13 @@ const {
     AttachmentBuilder,
     ModalBuilder,
     TextInputBuilder,
-    TextInputStyle
+    TextInputStyle,
+    EmbedBuilder
 } = require('discord.js');
 const { createCanvas, loadImage } = require('canvas');
 const { isCustomEmoji, getEmojiURL } = require('../utils/emoji');
 const { GameSession, Jackpot } = require('../database/models/GameSession');
+const logger = require('../utils/logger');
 
 const activeSessions = new Map();
 const SESSION_DURATION = 60;
@@ -23,7 +25,7 @@ const BET_AMOUNTS = [100, 1000, 5000, 10000]; // Giảm còn 4 để có chỗ c
 // Hũ (Jackpot) - lưu theo guild
 const jackpotPool = new Map(); // guildId -> amount (cache)
 const JACKPOT_RATE = 0.0005; // 0.05% mỗi lần cược đóng góp vào hũ
-const JACKPOT_WIN_CONDITION = [1, 1, 1]; // 3 mặt 1 (hoặc có thể đổi)
+const JACKPOT_WIN_CONDITION = [6, 6, 6]; // Chỉ nổ hũ khi ra 3 mặt 6
 const JACKPOT_EMOJI = '🏆';
 
 async function getJackpot(guildId) {
@@ -517,7 +519,15 @@ async function runSession(client, channelId) {
             await saveSession(session);
 
             // Kiểm tra jackpot - 3 mặt giống nhau
-            const isJackpot = dice[0] === dice[1] && dice[1] === dice[2];
+            // Triggers jackpot only when all three dice are equal AND match the configured WIN_CONDITION.
+            // Điều này giảm tỉ lệ nổ hũ so với việc bất kỳ bộ ba giống nhau nào cũng nổ.
+            const isTriple = dice[0] === dice[1] && dice[1] === dice[2];
+            let isJackpot = false;
+            if (Array.isArray(JACKPOT_WIN_CONDITION) && JACKPOT_WIN_CONDITION.length === 3) {
+                isJackpot = isTriple && dice[0] === JACKPOT_WIN_CONDITION[0];
+            } else {
+                isJackpot = isTriple;
+            }
             const jackpotAmount = await getJackpot(session.guildId);
             let jackpotWinners = [];
 
@@ -545,8 +555,12 @@ async function runSession(client, channelId) {
                     }
                     
                     await client.setBalance(oderId, balance + bet.amount + winAmount);
+                    // Log result (win)
+                    try { await logger.logResult({ game: 'taixiu', guildId: session.guildId, channelId, round: session.round, userId: oderId, username, stake: bet.amount, win: winAmount }); } catch (e) {}
                     winners.push({ oderId, username, win: winAmount, total: bet.amount + winAmount });
                 } else {
+                    // Log result (loss)
+                    try { await logger.logResult({ game: 'taixiu', guildId: session.guildId, channelId, round: session.round, userId: oderId, username, stake: bet.amount, win: 0 }); } catch (e) {}
                     losers.push({ oderId, username, amount: bet.amount });
                 }
             }
@@ -569,6 +583,39 @@ async function runSession(client, channelId) {
 
             const resultImage = await createResultCanvas(session, dice, total, winners, losers, isJackpot, jackpotAmount);
             await msg.edit(createResultUI(session, resultImage, isJackpot, jackpotAmount, jackpotWinners.length));
+
+            // Gửi log thắng thua chi tiết vào kênh đã cấu hình (nếu có) - dùng embed và mention
+            try {
+                const GuildModel = require('../database/models/Guild');
+                const { gameLogChannel } = await GuildModel.getLogChannels(session.guildId);
+                if (gameLogChannel) {
+                    const ch = await client.channels.fetch(gameLogChannel).catch(() => null);
+                    if (ch && ch.send) {
+                        const lines = [];
+                        const mentions = new Set();
+                        winners.forEach(w => {
+                            const stake = (w.total || 0) - (w.win || 0);
+                            const win = (w.win || 0) + (w.jackpot || 0);
+                            lines.push(`✅ ${w.username} (<@${w.oderId}>) — stake: ${stake.toLocaleString()}đ — win: ${win.toLocaleString()}đ`);
+                            mentions.add(`<@${w.oderId}>`);
+                        });
+                        losers.forEach(l => {
+                            lines.push(`❌ ${l.username} (<@${l.oderId}>) — stake: ${l.amount.toLocaleString()}đ — win: 0`);
+                            mentions.add(`<@${l.oderId}>`);
+                        });
+                        if (lines.length === 0) lines.push('Không ai đặt cược ở vòng này.');
+
+                        const embed = new EmbedBuilder()
+                            .setTitle(`🎲 Tài Xỉu #${session.round} - Kết quả`)
+                            .setColor(0x9b59b6)
+                            .setDescription(lines.join('\n'))
+                            .setTimestamp();
+
+                        // Do not put mentions in message content; keep mention text inside the embed description
+                        await ch.send({ embeds: [embed] }).catch(() => {});
+                    }
+                }
+            } catch (e) {}
 
             setTimeout(async () => {
                 if (activeSessions.has(channelId)) {
@@ -747,6 +794,8 @@ module.exports = {
                     session.bets[userId].amount += amount;
                     
                     const totalBet = session.bets[userId].amount;
+                    // Log bet
+                    try { await logger.logBet({ game: 'taixiu', guildId: session.guildId, channelId: session.channelId, round: session.round, userId, username: interaction.user.username, choice: session.userSelections[userId].choice, amount }); } catch (e) {}
                     return interaction.reply({ 
                         content: `✅ Đã cược thêm **${amount.toLocaleString()}đ** vào **${session.userSelections[userId].choice === 'tai' ? '🔴 TÀI' : '🔵 XỈU'}** (tổng: ${totalBet.toLocaleString()}đ)!`, 
                         flags: MessageFlags.Ephemeral 
@@ -800,6 +849,8 @@ module.exports = {
                 session.bets[userId].choice = choice;
                 
                 const totalBet = session.bets[userId].amount;
+                // Log bet
+                try { await logger.logBet({ game: 'taixiu', guildId: session.guildId, channelId: session.channelId, round: session.round, userId, username: interaction.user.username, choice, amount }); } catch (e) {}
                 return interaction.reply({ 
                     content: `✅ Đã cược **${amount.toLocaleString()}đ** vào **${choice === 'tai' ? '🔴 TÀI' : '🔵 XỈU'}** (tổng: ${totalBet.toLocaleString()}đ)!`, 
                     flags: MessageFlags.Ephemeral 
@@ -869,7 +920,7 @@ module.exports = {
 
         session.userSelections[userId].amount = amount;
 
-        if (session.userSelections[userId].choice) {
+            if (session.userSelections[userId].choice) {
             // Đã chọn Tài/Xỉu trước đó, cược thêm vào choice đó
             const newBalance = await interaction.client.getBalance(userId);
             if (amount > newBalance) {
@@ -883,6 +934,8 @@ module.exports = {
             session.bets[userId].amount += amount;
             
             const totalBet = session.bets[userId].amount;
+                // Log custom bet
+                try { await logger.logBet({ game: 'taixiu', guildId: session.guildId, channelId: session.channelId, round: session.round, userId, username: interaction.user.username, choice: session.userSelections[userId].choice, amount }); } catch (e) {}
             return interaction.reply({ 
                 content: `✅ Đã cược thêm **${amount.toLocaleString()}đ** vào **${session.userSelections[userId].choice === 'tai' ? '🔴 TÀI' : '🔵 XỈU'}** (tổng: ${totalBet.toLocaleString()}đ)!`, 
                 flags: MessageFlags.Ephemeral 

@@ -9,6 +9,7 @@ const User = require('../database/models/User');
 const Marriage = require('../database/models/Marriage');
 const Topup = require('../database/models/Topup');
 const { buttonEmoji, displayEmoji } = require('../utils/emoji');
+const logger = require('../utils/logger');
 
 // Kiểm tra giao dịch trên Casso (không cần số tiền cố định)
 async function checkCassoTransaction(code) {
@@ -168,6 +169,29 @@ module.exports = {
                         const currentBalance = await User.getBalance(interaction.user.id);
                         const newBalance = currentBalance + actualAmount;
                         await User.setBalance(interaction.user.id, newBalance);
+
+                        // Log nạp tiền
+                        try { await logger.logDeposit({ userId: interaction.user.id, username: interaction.user.username, amount: actualAmount, newBalance, code: topup.code }); } catch (e) {}
+                        // Gửi message tới kênh log nạp tiền nếu đã cấu hình
+                        try {
+                            const { depositLogChannel } = await require('../database/models/Guild').getLogChannels(interaction.guild.id);
+                            if (depositLogChannel) {
+                                const ch = await interaction.client.channels.fetch(depositLogChannel).catch(() => null);
+                                if (ch && ch.send) {
+                                    const embed = new EmbedBuilder()
+                                            .setTitle('💳 Nạp tiền thành công')
+                                            .setColor(0x00D166)
+                                            .addFields(
+                                                { name: 'Người dùng', value: `${interaction.user.tag} (<@${interaction.user.id}>)`, inline: true },
+                                                { name: 'Số tiền', value: `${actualAmount.toLocaleString()}đ`, inline: true },
+                                                { name: 'Số dư mới', value: `${newBalance.toLocaleString()}đ`, inline: true }
+                                            )
+                                            .setTimestamp();
+                                        // Do not mention in message content; keep mention only inside embed
+                                        await ch.send({ embeds: [embed] }).catch(() => {});
+                                }
+                            }
+                        } catch (e) {}
 
                         // Update message gốc với Components V2
                         const successContainer = new ContainerBuilder().setAccentColor(0x00D166);
