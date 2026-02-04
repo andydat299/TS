@@ -516,8 +516,9 @@ module.exports = {
                     const selected = interaction.values[0];
                     const prefix = '!'; // Default prefix
                     
-                    // Kiểm tra quyền admin
-                    const isDev = interaction.user.id === process.env.ID_DEV;
+                    // Kiểm tra quyền admin (hỗ trợ nhiều Dev)
+                    const devs = require('../utils/devs');
+                    const isDev = devs.isDev(interaction.user.id);
                     const isAdmin = interaction.member.permissions.has('Administrator');
                     
                     // Nếu chọn admin mà không có quyền, từ chối

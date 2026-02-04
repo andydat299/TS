@@ -14,7 +14,7 @@ const { buttonEmoji, displayEmoji } = require('./src/utils/emoji');
 const { createMarriageCard, createNotMarriedCard } = require('./src/utils/marriage-canvas');
 
 const DEFAULT_PREFIX = '!';
-const ID_DEV = process.env.ID_DEV || ''; // ID Developer từ .env
+const devs = require('./src/utils/devs');
 const PAYMENT_PORT = process.env.PAYMENT_PORT || process.env.PORT || 3000;
 const VIETQR_BANK = process.env.VIETQR_BANK || '';
 const VIETQR_ACCOUNT = process.env.VIETQR_ACCOUNT || '';
@@ -264,7 +264,7 @@ client.on('messageCreate', async (message) => {
 
     // !setprefix <prefix mới> - Đổi prefix (Admin hoặc Dev)
     if (command === 'setprefix' || command === 'prefix') {
-        const isDev = message.author.id === ID_DEV;
+        const isDev = devs.isDev(message.author.id);
         const isAdmin = message.member.permissions.has('Administrator');
         
         if (!isDev && !isAdmin) {
@@ -420,7 +420,7 @@ client.on('messageCreate', async (message) => {
     // !addmoney @user <số tiền> - Add tiền (Dev only, hỗ trợ k=nghìn, m=triệu)
     if (command === 'addmoney' || command === 'add' || command === 'give') {
         // Chỉ Dev mới có quyền
-        const isDev = message.author.id === ID_DEV;
+        const isDev = devs.isDev(message.author.id);
         if (!isDev) {
             return message.reply('❌ Chỉ Dev mới có quyền sử dụng lệnh này!');
         }
@@ -448,7 +448,7 @@ client.on('messageCreate', async (message) => {
 
     // !setmoney @user <số tiền> - Set tiền (Admin/Dev only, hỗ trợ k=nghìn, m=triệu)
     if (command === 'setmoney' || command === 'set') {
-        const isDev = message.author.id === ID_DEV;
+        const isDev = devs.isDev(message.author.id);
         const isAdmin = message.member.permissions.has('Administrator');
         if (!isDev && !isAdmin) {
             return message.reply('❌ Bạn không có quyền sử dụng lệnh này!');
@@ -470,7 +470,7 @@ client.on('messageCreate', async (message) => {
 
     // !reset @user - Reset tiền 1 user về mặc định (Admin/Dev only)
     if (command === 'reset') {
-        const isDev = message.author.id === ID_DEV;
+        const isDev = devs.isDev(message.author.id);
         const isAdmin = message.member.permissions.has('Administrator');
         if (!isDev && !isAdmin) {
             return message.reply('❌ Bạn không có quyền sử dụng lệnh này!');
@@ -488,7 +488,7 @@ client.on('messageCreate', async (message) => {
 
     // !resetall - Reset tiền tất cả users (Dev only)
     if (command === 'resetall') {
-        const isDev = message.author.id === ID_DEV;
+        const isDev = devs.isDev(message.author.id);
         if (!isDev) {
             return message.reply('❌ Chỉ Dev mới có thể sử dụng lệnh này!');
         }
@@ -507,7 +507,7 @@ client.on('messageCreate', async (message) => {
 
     // !doanhthu - Xem tổng doanh thu từ nạp tiền (Admin/Dev)
     if (command === 'doanhthu' || command === 'revenue') {
-        const isDev = message.author.id === ID_DEV;
+        const isDev = devs.isDev(message.author.id);
         const isAdmin = message.member.permissions.has('Administrator');
         if (!isDev && !isAdmin) {
             return message.reply('❌ Bạn không có quyền sử dụng lệnh này!');
@@ -559,7 +559,7 @@ client.on('messageCreate', async (message) => {
 
     // !resetdoanhthu - Reset thống kê doanh thu (Admin/Dev)
     if (command === 'resetdoanhthu' || command === 'resetrevenue') {
-        const isDev = message.author.id === ID_DEV;
+        const isDev = devs.isDev(message.author.id);
         const isAdmin = message.member.permissions.has('Administrator');
         if (!isDev && !isAdmin) {
             return message.reply('❌ Bạn không có quyền sử dụng lệnh này!');
@@ -597,7 +597,7 @@ client.on('messageCreate', async (message) => {
         container.addSeparatorComponents(new SeparatorBuilder().setDivider(true));
 
         // Kiểm tra quyền admin
-        const isDev = message.author.id === ID_DEV;
+        const isDev = devs.isDev(message.author.id);
         const isAdmin = message.member.permissions.has('Administrator');
 
         const selectMenu = new StringSelectMenuBuilder()
@@ -704,7 +704,7 @@ client.on('messageCreate', async (message) => {
 
     // !addring <tên> <giá> [emoji] [mô tả] - Thêm nhẫn (Admin/Dev)
     if (command === 'addring') {
-        const isDev = message.author.id === ID_DEV;
+        const isDev = devs.isDev(message.author.id);
         const isAdmin = message.member.permissions.has('Administrator');
         if (!isDev && !isAdmin) {
             return message.reply('❌ Bạn cần quyền **Administrator**!');
@@ -725,7 +725,7 @@ client.on('messageCreate', async (message) => {
 
     // !removering <ID> - Xóa nhẫn (Admin/Dev)
     if (command === 'removering' || command === 'delring') {
-        const isDev = message.author.id === ID_DEV;
+        const isDev = devs.isDev(message.author.id);
         const isAdmin = message.member.permissions.has('Administrator');
         if (!isDev && !isAdmin) {
             return message.reply('❌ Bạn cần quyền **Administrator**!');
